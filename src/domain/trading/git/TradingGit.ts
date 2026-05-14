@@ -7,6 +7,7 @@
 import { createHash } from 'crypto'
 import Decimal from 'decimal.js'
 import { Order, UNSET_DECIMAL } from '@traderalice/ibkr'
+import { OrderHelper } from '../OrderHelper.js'
 import type { ITradingGit, TradingGitConfig } from './interfaces.js'
 import type {
   CommitHash,
@@ -358,12 +359,13 @@ export class TradingGit implements ITradingGit {
   }
 
   show(hash: CommitHash): GitCommit | null {
-    return this.commits.find((c) => c.hash === hash) ?? null
+    const commit = this.commits.find((c) => c.hash === hash)
+    return commit ? this.projectCommit(commit) : null
   }
 
   status(): GitStatus {
     return {
-      staged: [...this.stagingArea],
+      staged: this.stagingArea.map((op) => this.projectOperation(op)),
       pendingMessage: this.pendingMessage,
       pendingHash: this.pendingHash,
       head: this.head,
@@ -371,10 +373,30 @@ export class TradingGit implements ITradingGit {
     }
   }
 
+  // Strip IBKR sentinel defaults before any Operation leaves this class —
+  // raw Order instances stay private to staging / push internals, never
+  // observed by external callers (UI, MCP, c.json, on-disk commit.json).
+  private projectOperation(op: Operation): Operation {
+    if (op.action === 'placeOrder') {
+      return { ...op, order: OrderHelper.toWire(op.order) as unknown as Order }
+    }
+    if (op.action === 'modifyOrder') {
+      return { ...op, changes: OrderHelper.toWire(op.changes) as unknown as Partial<Order> }
+    }
+    return op
+  }
+
+  private projectCommit(commit: GitCommit): GitCommit {
+    return { ...commit, operations: commit.operations.map((op) => this.projectOperation(op)) }
+  }
+
   // ==================== Serialization ====================
 
   exportState(): GitExportState {
-    return { commits: [...this.commits], head: this.head }
+    return {
+      commits: this.commits.map((c) => this.projectCommit(c)),
+      head: this.head,
+    }
   }
 
   static restore(state: GitExportState, config: TradingGitConfig): TradingGit {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api'
+import { isUnsetDecimal } from '../lib/format'
 import type { TradingAccount, WalletStatus, WalletPushResult, WalletCommitLog } from '../api/types'
 
 // ==================== Types ====================
@@ -30,15 +31,9 @@ function opSymbol(op: WalletStatus['staged'][number]): string {
   return sep !== -1 ? raw.slice(sep + 1) : raw
 }
 
-/**
- * Format quantity/price for display.
- * Strings pass through (backend already Decimal-serialized).
- * Numbers go through toFixed(8) + trim to avoid IEEE 754 artifacts and
- * the default toLocaleString behavior that truncates decimals to 3 (which
- * turns crypto-scale quantities like 0.00012345 into "0").
- */
 function fmtNum(n: number | string | undefined | null): string {
   if (n == null || n === '') return ''
+  if (isUnsetDecimal(n)) return ''
   if (typeof n === 'string') return n
   if (!Number.isFinite(n)) return String(n)
   const rounded = n.toFixed(8).replace(/\.?0+$/, '')

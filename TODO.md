@@ -54,6 +54,35 @@ the item when done — git log is the history.
 
 ## Architecture
 
+- [ ] `OrderRequest` discriminated union — long-term followup to the
+      2026-05-14 OrderHelper boundary fix. Idea: introduce a domain-level
+      intent type (`{ orderType: 'MKT'; ... } | { orderType: 'LMT';
+      lmtPrice: Decimal; ... } | ...`) that the web/tool entry points
+      parse into, so "MKT can't carry lmtPrice" / "LMT requires lmtPrice"
+      becomes a compile-time invariant instead of a runtime sentinel
+      check. `Order` (IBKR's 200-field flat struct) stays as the broker
+      interface contract — UTA would translate OrderRequest → Order at
+      the broker call site. Helper structure already accommodates: just
+      add `fromRequest(req): Order` alongside the existing `read` / `toWire`.
+      Decision deferred: discussed at length on 2026-05-13/14, deliberately
+      postponed because the helper-only fix closes the live incident and
+      narrowing field surface risks losing the IBKR-as-superset scaffold
+      that forces brokers to make explicit "support / loud reject"
+      decisions on each IBKR field. Revisit when adding a broker that
+      stresses orderType variants (e.g. TRAIL LIMIT / MOC / LOC).
+
+- [ ] Phase-1 broker internal cleanup with `OrderHelper.read()`. The
+      sentinel boundary at TradingGit (2026-05-14) plugged the wire leak,
+      but `CcxtBroker`, `AlpacaBroker`, `MockBroker`, `LongbridgeBroker`,
+      `IbkrBroker` all still carry the `if (!order.lmtPrice.equals(
+      UNSET_DECIMAL))` template at every consumption site. Migrate each
+      broker's `placeOrder` / `modifyOrder` / `convertCcxtOrder` /
+      equivalents to consume `OrderHelper.read(order)` and read
+      `view.lmtPrice` / `view.auxPrice` etc. — same semantics, no sentinel
+      knowledge inside broker code. Independent PRs per broker; not
+      blocking. Broker interface signature `placeOrder(order: Order)`
+      stays as-is — Order remains the contract.
+
 - [ ] Broker raw-upstream recorder + no-connect replay harness (Layer 2
       bug debug surface). When a community user reports a broker-specific
       normalize bug — IBKR's `request-bridge.ts:470 .abs()`, the proto
@@ -160,6 +189,30 @@ the item when done — git log is the history.
       something goes stale.
 
 ## Bugs
+
+- [ ] `Execution.price` / `OperationResult.execution.price` sentinel leak.
+      Same bug shape as the OrderHelper boundary fix (2026-05-14) but for
+      IBKR's number-typed `UNSET_DOUBLE = Number.MAX_VALUE = 1.7e308`.
+      `TradingGit.formatOperationChange:321,330,347` reads
+      `result.execution?.price` and renders ` @${price}`; if a broker hands
+      back an unfilled Execution with the default sentinel (or any other
+      surface reaches Execution before it's populated), the commit log
+      shows `@1.7e308`. OrderHelper only covers Decimal-typed Order
+      fields. Either extend the helper with an Execution variant, or strip
+      Execution sentinels at the same wire boundary (`projectOperation`
+      handles `result.execution.price` too). Not reproduced in the wild
+      yet — flagged structurally during the 2026-05-13 incident review.
+
+- [ ] CCXT `convertCcxtOrder` may not extract `o.average` into
+      `avgFillPrice`. Surfaced 2026-05-13 during the precision-explosion
+      investigation. After a Bybit MKT fill, the staged Operation's
+      filledPrice was empty even though CCXT's returned order had a
+      populated `average`. `src/domain/trading/brokers/ccxt/CcxtBroker.ts`
+      `convertCcxtOrder()` ~line 823-854 returns `{ contract, order,
+      orderState, ...tpsl }` with no `avgFillPrice`; the field needs to
+      be sourced from `o.average` (when present). Confirm against a real
+      Bybit fill before patching — also audit whether `o.filled` /
+      `o.amount` should populate `filledQty` symmetrically.
 
 - [ ] IBKR `getNativeKey` may use the wrong field for nativeKey. Surfaced
       2026-05-07 during the Phase-3 revert (`afddd41`) when articulating

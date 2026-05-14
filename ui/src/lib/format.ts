@@ -22,6 +22,15 @@ export function currencySymbol(currency?: string): string {
   return CURRENCY_SYMBOLS[currency.toUpperCase()] ?? `${currency} `
 }
 
+// Defense layer: if the backend's OrderHelper.toWire ever forgets to strip
+// IBKR's UNSET_DECIMAL = 2^127-1, callers can detect the sentinel string
+// shape and treat it as "no value" instead of rendering "$1.7e38".
+export const UNSET_DECIMAL_STR = '1.70141183460469231731687303715884105727e+38'
+
+export function isUnsetDecimal(v: number | string | undefined | null): boolean {
+  return v === UNSET_DECIMAL_STR || v === Number(UNSET_DECIMAL_STR)
+}
+
 function toFiniteNumber(input: number | string | undefined | null): number | null {
   if (input == null) return null
   const n = typeof input === 'number' ? input : Number(input)

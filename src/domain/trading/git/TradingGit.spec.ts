@@ -427,6 +427,94 @@ describe('TradingGit', () => {
     })
   })
 
+  // ==================== sentinel boundary ====================
+
+  describe('sentinel boundary (OrderHelper.toWire)', () => {
+    // Regression: 2026-05-13 — MKT order on Bybit rendered as
+    // "BUY 0.0005 BTC/USDT MKT @ 1.70141183460469231731687303715884105727e+38"
+    // in PushApprovalPanel. UNSET_DECIMAL (2^127-1) leaked from Order's
+    // class defaults through c.json into the UI. Every public observer of
+    // staged/committed Operations must strip Order-class sentinels.
+    const UNSET_DECIMAL_STR = '1.70141183460469231731687303715884105727e+38'
+
+    it('status().staged strips sentinel fields from a MKT placeOrder', () => {
+      // MKT order — totalQuantity is the only price-shaped field user set.
+      // lmtPrice / auxPrice / trailStopPrice / trailingPercent / cashQty
+      // all hold the UNSET_DECIMAL class default and must NOT appear.
+      git.add(buyOp())
+      const s = git.status()
+      const op = s.staged[0] as Extract<Operation, { action: 'placeOrder' }>
+      expect(op.order).not.toHaveProperty('lmtPrice')
+      expect(op.order).not.toHaveProperty('auxPrice')
+      expect(op.order).not.toHaveProperty('trailStopPrice')
+      expect(op.order).not.toHaveProperty('trailingPercent')
+      expect(op.order).not.toHaveProperty('cashQty')
+      expect(op.order).not.toHaveProperty('filledQuantity')
+      // Real value passes through.
+      expect(op.order.totalQuantity).toBeInstanceOf(Decimal)
+      expect(op.order.totalQuantity.toFixed()).toBe('10')
+    })
+
+    it('show()/exportState()/status() JSON output contains no sentinel literal', async () => {
+      git.add(buyOp())
+      git.commit('mkt buy')
+      await git.push()
+
+      const head = git.status().head!
+      for (const blob of [git.status(), git.show(head), git.exportState()]) {
+        const serialised = JSON.stringify(blob)
+        expect(serialised).not.toContain(UNSET_DECIMAL_STR)
+        expect(serialised).not.toContain('170141183460469231731687303715884105727')
+      }
+    })
+
+    it('modifyOrder.changes also strips sentinels', () => {
+      const partialChanges = new Order()
+      partialChanges.lmtPrice = new Decimal('150')
+      // All other fields remain at UNSET_DECIMAL class defaults.
+      git.add({ action: 'modifyOrder', orderId: 'o-1', changes: partialChanges })
+      const s = git.status()
+      const op = s.staged[0] as Extract<Operation, { action: 'modifyOrder' }>
+      expect(op.changes.lmtPrice).toBeInstanceOf(Decimal)
+      expect((op.changes.lmtPrice as Decimal).toFixed()).toBe('150')
+      expect(op.changes).not.toHaveProperty('auxPrice')
+      expect(op.changes).not.toHaveProperty('trailStopPrice')
+      expect(op.changes).not.toHaveProperty('totalQuantity')
+    })
+
+    it('non-sentinel Decimal fields survive (round-trip safety)', async () => {
+      const contract = makeContract({ symbol: 'ETH' })
+      const order = new Order()
+      order.action = 'BUY'
+      order.orderType = 'LMT'
+      order.totalQuantity = new Decimal('0.5')
+      order.lmtPrice = new Decimal('3500.25')
+      git.add({ action: 'placeOrder', contract, order })
+      git.commit('lmt buy')
+      await git.push()
+
+      const exported = git.exportState()
+      const op = exported.commits[0].operations[0] as Extract<Operation, { action: 'placeOrder' }>
+      expect(op.order.lmtPrice).toBeInstanceOf(Decimal)
+      expect((op.order.lmtPrice as Decimal).toFixed()).toBe('3500.25')
+      expect(op.order.totalQuantity.toFixed()).toBe('0.5')
+      // But unset auxPrice still gone.
+      expect(op.order).not.toHaveProperty('auxPrice')
+    })
+
+    it('staging mutation after status() does not affect prior projection', () => {
+      // Defensive: projectOperation must spread, not return raw ref.
+      git.add(buyOp())
+      const s1 = git.status()
+      const op1 = s1.staged[0] as Extract<Operation, { action: 'placeOrder' }>
+      // Mutate the projection — should not bleed back into staging.
+      ;(op1.order as unknown as Record<string, unknown>).lmtPrice = 'tampered'
+      const s2 = git.status()
+      const op2 = s2.staged[0] as Extract<Operation, { action: 'placeOrder' }>
+      expect(op2.order).not.toHaveProperty('lmtPrice')
+    })
+  })
+
   // ==================== exportState / restore ====================
 
   describe('exportState / restore', () => {

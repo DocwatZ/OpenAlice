@@ -15,7 +15,7 @@ import { OrderEntryDialog, type OrderEntryMode } from '../components/uta/OrderEn
 import { SnapshotDetail } from '../components/SnapshotDetail'
 import { EquityCurve } from '../components/EquityCurve'
 import { Metric, signFromDelta } from '../components/Metric'
-import { fmt, fmtPnl, fmtNum, fmtPctSigned } from '../lib/format'
+import { fmt, fmtPnl, fmtNum, fmtPctSigned, isUnsetDecimal } from '../lib/format'
 import { secTypeToClass, assetClassLabel, ASSET_CLASS_ORDER, type AssetClass } from '../lib/asset-class'
 
 // ==================== Page ====================
@@ -505,7 +505,7 @@ function OrdersSection({ orders }: { orders: unknown[] }) {
                 <td className={`px-3 py-2 font-medium ${o.order?.action === 'BUY' ? 'text-green' : o.order?.action === 'SELL' ? 'text-red' : 'text-text'}`}>{o.order?.action ?? '—'}</td>
                 <td className="px-3 py-2 text-text-muted">{o.order?.orderType ?? '—'}</td>
                 <td className="px-3 py-2 text-right text-text tabular-nums">{String(o.order?.totalQuantity ?? '')}</td>
-                <td className="px-3 py-2 text-right text-text-muted tabular-nums">{o.order?.lmtPrice != null ? String(o.order.lmtPrice) : '—'}</td>
+                <td className="px-3 py-2 text-right text-text-muted tabular-nums">{o.order?.lmtPrice != null && !isUnsetDecimal(o.order.lmtPrice) ? String(o.order.lmtPrice) : '—'}</td>
                 <td className="px-3 py-2">
                   <span className="text-[11px] text-text-muted">{o.orderState?.status ?? 'Unknown'}</span>
                 </td>
