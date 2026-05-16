@@ -56,6 +56,32 @@ Unfinished items there compound over time if they're forgotten.
   add it with enough context (symptom + suspected location) that the
   next person can start without re-derivation.
 
+## Working with README.md
+
+`README.md` is the public-facing positioning artifact. It accumulates
+debt fast because day-to-day changes rarely feel "README-worthy"
+individually — but a quarter's worth of small shifts can leave the
+README narrating an obsolete mental model. The right time to audit is
+**right after** a large-scale change ships, while context is fresh.
+
+- **After finishing a large-scale change**, scan the README for sections
+  that still describe the pre-change state. "Large-scale" means: a new
+  top-level concept landed (e.g. Workspace, Inbox); a module was
+  retired (e.g. Brain); an existing layer's responsibilities reshaped
+  (e.g. Automation split into scheduling + execution); a generation
+  version bump. Bug fixes, refactors that don't change user-facing
+  surface, and internal renames do **not** trigger an audit.
+- **Before making any README edits, ask the user how to frame the
+  changes** — the README is product positioning, not just docs.
+  Framing decisions ("is Automation legacy or is it reframed into two
+  layers?", "is Brain retired or trimmed?") belong to the user, not to
+  the AI. Present what you'd propose to change, get direction, then
+  edit.
+- **Don't churn marketing copy** — the three pillars, the tagline,
+  the hero — leave alone unless the user explicitly opens that
+  conversation. Frequent reframing of top-of-funnel copy is worse
+  than slightly-stale-but-consistent copy.
+
 ## Migrations
 
 `data/config/` and other persisted user state evolve across releases.
