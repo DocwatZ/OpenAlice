@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
+import { templatesPath } from '@/core/paths.js';
 
 export interface ServerConfig {
   readonly command: readonly string[];
@@ -100,7 +100,7 @@ export function loadConfig(opts: LoadConfigOptions): ServerConfig {
   const launcherRoot = resolve(
     env['AQ_LAUNCHER_ROOT'] ?? join(homedir(), '.openalice', 'workspaces'),
   );
-  const templatesDir = resolve(env['AQ_TEMPLATES_DIR'] ?? defaultTemplatesDir());
+  const templatesDir = resolve(env['AQ_TEMPLATES_DIR'] ?? templatesPath());
   const legacyBootstrapScript = env['AQ_BOOTSTRAP_SCRIPT']
     ? resolve(env['AQ_BOOTSTRAP_SCRIPT'])
     : null;
@@ -160,12 +160,6 @@ function parseIntEnv(raw: string | undefined, fallback: number, lo: number, hi: 
   if (n < lo) return lo;
   if (n > hi) return hi;
   return n;
-}
-
-function defaultTemplatesDir(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  // src/workspaces/config.ts → ./templates/
-  return join(here, 'templates');
 }
 
 /**

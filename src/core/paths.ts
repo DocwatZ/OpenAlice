@@ -43,6 +43,24 @@ export function uiBundlePath(): string {
   return resolve(APP_RESOURCES_HOME, 'ui', 'dist')
 }
 
+/**
+ * Path to the workspace bootstrap templates (chat / auto-quant / etc).
+ *
+ * Previously resolved via `import.meta.url` from src/workspaces/config.ts,
+ * which only worked under tsx because the bundled dist/main.js has
+ * import.meta.url pointing at the bundle file (the templates aren't next
+ * to it). Routing through APP_RESOURCES_HOME makes this work the same way
+ * default/ does: dev points to repo source, packaged points to wherever
+ * the bundler copied the templates inside .app/Contents/Resources/.
+ *
+ * NOTE: For packaged .app distribution, build.files in package.json must
+ * include `src/workspaces/templates/**` (currently DOES NOT — workspace
+ * spawning will fail until that's added; tracked in TODO).
+ */
+export function templatesPath(): string {
+  return resolve(APP_RESOURCES_HOME, 'src', 'workspaces', 'templates')
+}
+
 /** Effective USER_DATA_HOME — exported for diagnostics / migration logic. */
 export const userDataHome = USER_DATA_HOME
 
