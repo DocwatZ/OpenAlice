@@ -569,6 +569,93 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
     });
   });
 
+  // Headless probe: spawn the adapter's CLI against the workspace with a
+  // positional prompt appended, run in a temporary PTY (no pool, no record
+  // mutation), kill on timeout, return the PTY-output tail + a jsonl-delta
+  // snapshot of the transcript dir. Lets an AI / curl caller verify the
+  // full wiring (PWD, MCP, trust, resume) end-to-end without going through
+  // the UI. Refuses when a live PTY exists for the same record — they'd
+  // collide on the same transcript and the result would be misleading.
+  app.post('/:id/sessions/:sid/probe', async (c) => {
+    const id = c.req.param('id');
+    const token = c.req.param('sid');
+    if (!validId(id) || !SESSION_ID_RE.test(token)) {
+      return c.json({ error: 'not_found' }, 404);
+    }
+    let prompt: string;
+    let timeoutMs: number;
+    let resumeOverride: 'none' | 'last' | { sessionId: string } | undefined;
+    try {
+      const body = await safeJson(c);
+      const fields = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
+      const rawPrompt = fields['prompt'];
+      if (typeof rawPrompt !== 'string' || rawPrompt.length === 0) {
+        return c.json({ error: 'prompt_required' }, 400);
+      }
+      if (rawPrompt.length > 8000) {
+        return c.json({ error: 'prompt_too_long', message: 'max 8000 chars' }, 400);
+      }
+      prompt = rawPrompt;
+      const rawTimeout = fields['timeoutMs'];
+      timeoutMs = typeof rawTimeout === 'number' && rawTimeout > 0
+        ? Math.min(rawTimeout, 120_000)
+        : 20_000;
+      // resume override: 'auto' (default — follow record's resumeHint),
+      // 'fresh' (no resume flag), 'last' (force --continue), or a UUID
+      // string (force --resume <uuid>). Lets the probe seed a brand-new
+      // session before any real interaction has produced a transcript.
+      const rawResume = fields['resume'];
+      if (rawResume !== undefined && rawResume !== 'auto') {
+        if (rawResume === 'fresh') resumeOverride = 'none';
+        else if (rawResume === 'last') resumeOverride = 'last';
+        else if (typeof rawResume === 'string' && SESSION_ID_RE.test(rawResume)) {
+          resumeOverride = { sessionId: rawResume };
+        } else {
+          return c.json({ error: 'bad_request', message: 'resume must be "auto", "fresh", "last", or a UUID' }, 400);
+        }
+      }
+    } catch (err) {
+      return c.json({ error: 'bad_request', message: (err as Error).message }, 400);
+    }
+    const meta = svc.registry.get(id);
+    if (!meta) return c.json({ error: 'workspace_not_found' }, 404);
+    await svc.sessionRegistry.ensureLoaded(id).catch(() => undefined);
+    const record = svc.sessionRegistry.get(id, token);
+    if (!record) return c.json({ error: 'session_not_found' }, 404);
+    if (svc.pool.get(token)) {
+      return c.json({
+        error: 'session_live',
+        message: 'pause the live PTY before probing — they would race on the transcript',
+      }, 409);
+    }
+    const adapter = svc.adapters.get(record.agent);
+    if (!adapter) {
+      return c.json({
+        error: 'unknown_agent',
+        message: `record references unknown adapter: ${record.agent}`,
+      }, 500);
+    }
+    const resume: SessionFactoryContext['resume'] =
+      resumeOverride === 'none'
+        ? undefined
+        : resumeOverride === 'last'
+          ? 'last'
+          : resumeOverride !== undefined
+            ? resumeOverride
+            : resumeFromRecord(record, adapter);
+    launcherLogger.info('workspace.probe_started', {
+      id, sessionId: token, agent: adapter.id, promptLen: prompt.length, timeoutMs,
+      resumeMode: resume === undefined ? 'fresh' : resume === 'last' ? 'last' : 'by-id',
+    });
+    try {
+      const result = await svc.runHeadlessProbe(meta, adapter, resume, prompt, timeoutMs);
+      return c.json(result);
+    } catch (err) {
+      launcherLogger.error('workspace.probe_failed', { id, token, err });
+      return c.json({ error: 'probe_failed', message: (err as Error).message }, 500);
+    }
+  });
+
   app.delete('/:id/sessions/:sid', async (c) => {
     const id = c.req.param('id');
     const token = c.req.param('sid');
