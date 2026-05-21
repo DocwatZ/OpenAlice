@@ -137,7 +137,7 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
         // the template-default port literal which may not match the actual
         // backend (guardian can pick a different port if the default is taken).
         OPENALICE_MCP_URL: `http://127.0.0.1:${opts.mcpPort}/mcp`,
-      });
+      }, ws.dir);
       const spawnCtx = {
         ...(ctx.resume !== undefined ? { resume: ctx.resume } : {}),
         cwd: ws.dir,

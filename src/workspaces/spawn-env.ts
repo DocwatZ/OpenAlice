@@ -36,6 +36,7 @@ const SELF_VERSION = '0.1.0';
 export function buildSpawnEnv(
   parent: NodeJS.ProcessEnv,
   extras: { [key: string]: string } = {},
+  cwd?: string,
 ): { [key: string]: string } {
   const out: { [key: string]: string } = {};
   for (const [k, v] of Object.entries(parent)) {
@@ -48,6 +49,14 @@ export function buildSpawnEnv(
   out['COLORTERM'] = 'truecolor';
   out['TERM_PROGRAM'] = 'openalice-workspaces';
   out['TERM_PROGRAM_VERSION'] = SELF_VERSION;
+  // Override PWD to match the spawn cwd. Without this, the PTY child
+  // inherits the parent's PWD (backend's cwd = OpenAlice repo root), and
+  // tools that read $PWD instead of process.cwd() — notably the Claude
+  // Code CLI when deciding the project key under ~/.claude/projects/ —
+  // misidentify the project root. Symptom: chat workspace transcripts
+  // landing in the wrong dir, `claude --continue/--resume` failing
+  // immediately on resume.
+  if (cwd) out['PWD'] = cwd;
   // Caller-supplied per-session env (e.g. AQ_WS_ID, AQ_LAUNCHER_REPO_ROOT)
   // wins over the inherited env so .mcp.json `${VAR}` expansion at Claude
   // startup resolves to the right values.
