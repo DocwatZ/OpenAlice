@@ -31,6 +31,10 @@ import type {
   PriceChangeInput,
   SimulatePriceChangeResult,
   GitExportState,
+  AddResult,
+  StagePlaceOrderParams,
+  StageModifyOrderParams,
+  StageClosePositionParams,
 } from '@traderalice/uta-protocol'
 import type { Contract, ContractDescription, ContractDetails } from '@traderalice/ibkr'
 
@@ -181,6 +185,41 @@ export class UTAAccountSDK {
     return this.client.post<RejectResult>(
       `/api/trading/uta/${encodeURIComponent(this.id)}/wallet/reject`,
       reason !== undefined ? { reason } : undefined,
+    )
+  }
+
+  // ==================== Stage (sync → async via HTTP) ====================
+  //
+  // The in-process `UnifiedTradingAccount` returns these synchronously
+  // because staging is pure git-state mutation. Over HTTP they become
+  // Promise<AddResult>; callers add `await` and the rest of the stage→
+  // commit→push ceremony still works the same way.
+
+  stagePlaceOrder(params: StagePlaceOrderParams): Promise<AddResult> {
+    return this.client.post<AddResult>(
+      `/api/trading/uta/${encodeURIComponent(this.id)}/wallet/stage-place-order`,
+      params,
+    )
+  }
+
+  stageModifyOrder(params: StageModifyOrderParams): Promise<AddResult> {
+    return this.client.post<AddResult>(
+      `/api/trading/uta/${encodeURIComponent(this.id)}/wallet/stage-modify-order`,
+      params,
+    )
+  }
+
+  stageClosePosition(params: StageClosePositionParams): Promise<AddResult> {
+    return this.client.post<AddResult>(
+      `/api/trading/uta/${encodeURIComponent(this.id)}/wallet/stage-close-position`,
+      params,
+    )
+  }
+
+  stageCancelOrder(params: { orderId: string }): Promise<AddResult> {
+    return this.client.post<AddResult>(
+      `/api/trading/uta/${encodeURIComponent(this.id)}/wallet/stage-cancel-order`,
+      params,
     )
   }
 

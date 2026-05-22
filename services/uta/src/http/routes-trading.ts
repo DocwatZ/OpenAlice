@@ -358,6 +358,65 @@ export function createTradingRoutes(ctx: EngineContext) {
     }
   })
 
+  // ==================== Stage-only order entry ====================
+  //
+  // The AI tool layer talks to these — stage now, commit later, push
+  // when the user approves. Same body shape as the one-shot routes
+  // below but without the `message` field (commit message arrives at
+  // POST /wallet/commit time). All return the AddResult shape from
+  // TradingGit.add.
+
+  app.post('/uta/:id/wallet/stage-place-order', async (c) => {
+    const uta = ctx.utaManager.get(c.req.param('id'))
+    if (!uta) return c.json({ error: 'Account not found' }, 404)
+    try {
+      const body = await c.req.json().catch(() => ({}))
+      const result = uta.stagePlaceOrder(body)
+      return c.json(result)
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    }
+  })
+
+  app.post('/uta/:id/wallet/stage-modify-order', async (c) => {
+    const uta = ctx.utaManager.get(c.req.param('id'))
+    if (!uta) return c.json({ error: 'Account not found' }, 404)
+    try {
+      const body = await c.req.json().catch(() => ({}))
+      const result = uta.stageModifyOrder(body)
+      return c.json(result)
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    }
+  })
+
+  app.post('/uta/:id/wallet/stage-close-position', async (c) => {
+    const uta = ctx.utaManager.get(c.req.param('id'))
+    if (!uta) return c.json({ error: 'Account not found' }, 404)
+    try {
+      const body = await c.req.json().catch(() => ({}))
+      const result = uta.stageClosePosition(body)
+      return c.json(result)
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    }
+  })
+
+  app.post('/uta/:id/wallet/stage-cancel-order', async (c) => {
+    const uta = ctx.utaManager.get(c.req.param('id'))
+    if (!uta) return c.json({ error: 'Account not found' }, 404)
+    try {
+      const body = await c.req.json().catch(() => ({}))
+      if (!body.orderId || typeof body.orderId !== 'string') {
+        return c.json({ error: 'orderId is required' }, 400)
+      }
+      const result = uta.stageCancelOrder({ orderId: body.orderId })
+      return c.json(result)
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+    }
+  })
+
   // ==================== One-shot order entry ====================
   //
   // Combine stage → commit → push for the frontend's manual order

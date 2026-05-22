@@ -52,44 +52,19 @@ export interface UnifiedTradingAccountOptions {
  * number must convert via `String(x)` at the boundary; that's
  * deliberate friction so the precision-loss point is explicit.
  */
-export interface StagePlaceOrderParams {
-  aliceId: string
-  symbol?: string
-  action: 'BUY' | 'SELL'
-  orderType: string
-  totalQuantity?: string
-  cashQty?: string
-  lmtPrice?: string
-  auxPrice?: string
-  trailStopPrice?: string
-  trailingPercent?: string
-  tif?: string
-  goodTillDate?: string
-  outsideRth?: boolean
-  parentId?: string
-  ocaGroup?: string
-  takeProfit?: { price: string }
-  stopLoss?: { price: string; limitPrice?: string }
-}
-
-export interface StageModifyOrderParams {
-  orderId: string
-  totalQuantity?: string
-  lmtPrice?: string
-  auxPrice?: string
-  trailStopPrice?: string
-  trailingPercent?: string
-  orderType?: string
-  tif?: string
-  goodTillDate?: string
-}
-
-export interface StageClosePositionParams {
-  aliceId: string
-  symbol?: string
-  /** Empty / undefined closes the full position. */
-  qty?: string
-}
+// Stage param types live in `@traderalice/uta-protocol` (the SDK
+// contract surface). Re-exported here so existing callers within
+// `domain/trading/**` keep their relative imports working.
+export type {
+  StagePlaceOrderParams,
+  StageModifyOrderParams,
+  StageClosePositionParams,
+} from '@traderalice/uta-protocol'
+import type {
+  StagePlaceOrderParams,
+  StageModifyOrderParams,
+  StageClosePositionParams,
+} from '@traderalice/uta-protocol'
 
 // ==================== UnifiedTradingAccount ====================
 

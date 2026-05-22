@@ -217,6 +217,53 @@ export interface SimulatePriceChangeResult {
   }
 }
 
+// ==================== Stage params (used by AI tool layer + SDK) ====================
+//
+// All numeric fields are decimal strings — Decimal precision is
+// preserved through the staging layer into the persisted git operation
+// records. Callers (AI tools, HTTP routes) that have a number must
+// convert via `String(x)` at the boundary; that's deliberate friction
+// so the precision-loss point is explicit.
+
+export interface StagePlaceOrderParams {
+  aliceId: string
+  symbol?: string
+  action: 'BUY' | 'SELL'
+  orderType: string
+  totalQuantity?: string
+  cashQty?: string
+  lmtPrice?: string
+  auxPrice?: string
+  trailStopPrice?: string
+  trailingPercent?: string
+  tif?: string
+  goodTillDate?: string
+  outsideRth?: boolean
+  parentId?: string
+  ocaGroup?: string
+  takeProfit?: { price: string }
+  stopLoss?: { price: string; limitPrice?: string }
+}
+
+export interface StageModifyOrderParams {
+  orderId: string
+  totalQuantity?: string
+  lmtPrice?: string
+  auxPrice?: string
+  trailStopPrice?: string
+  trailingPercent?: string
+  orderType?: string
+  tif?: string
+  goodTillDate?: string
+}
+
+export interface StageClosePositionParams {
+  aliceId: string
+  symbol?: string
+  /** Empty / undefined closes the full position. */
+  qty?: string
+}
+
 // ==================== Operation Helpers ====================
 
 /** Extract the symbol from any Operation variant. */
