@@ -247,6 +247,72 @@ describe('auth middleware — playbook 02 (CSRF)', () => {
   })
 })
 
+describe('auth middleware — SPA shell exception', () => {
+  // Same setup as the protected-route app but with non-API routes
+  // registered, so we can verify the SPA shell can be reached without
+  // a session (otherwise the React bundle never loads and the user
+  // can't even see the login page).
+  function makeSPAApp() {
+    const app = new Hono()
+    app.use('*', createAuthMiddleware({ trustedProxies: [], csrfTrustedOrigins: [] }))
+    app.get('/', (c) => c.html('<html>spa</html>'))
+    app.get('/inbox', (c) => c.html('<html>spa</html>'))
+    app.get('/workspaces/abc', (c) => c.html('<html>spa</html>'))
+    app.get('/api/trading/uta', (c) => c.json({ utas: [] }))
+    app.post('/api/trading/uta/x/wallet/push', (c) => c.json({ ok: true }))
+    return app
+  }
+
+  it('GET / (SPA root) is public — even from a foreign IP, no cookie', async () => {
+    const app = makeSPAApp()
+    const res = await app.request('/', undefined, envWithIp('203.0.113.5'))
+    expect(res.status).toBe(200)
+  })
+
+  it('GET /inbox (SPA deep-link) is public', async () => {
+    const app = makeSPAApp()
+    const res = await app.request('/inbox', undefined, envWithIp('203.0.113.5'))
+    expect(res.status).toBe(200)
+  })
+
+  it('GET /workspaces/abc (SPA route with param) is public', async () => {
+    const app = makeSPAApp()
+    const res = await app.request('/workspaces/abc', undefined, envWithIp('203.0.113.5'))
+    expect(res.status).toBe(200)
+  })
+
+  it('GET /api/trading/uta is STILL gated — SPA exception is GET-only on non-/api', async () => {
+    const app = makeSPAApp()
+    const res = await app.request('/api/trading/uta', undefined, envWithIp('203.0.113.5'))
+    expect(res.status).toBe(401)
+  })
+
+  it('POST to a non-api path is STILL gated — SPA exception is GET-only', async () => {
+    const app = makeSPAApp()
+    const res = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }, envWithIp('203.0.113.5'))
+    // No route defined for POST / so Hono will 404, but the important
+    // thing is the middleware shouldn't have let it through. We check
+    // by registering POST / and verifying 401:
+    expect([401, 404]).toContain(res.status)
+  })
+
+  it('explicit non-GET non-api POST is gated to 401 when route exists', async () => {
+    const app = new Hono()
+    app.use('*', createAuthMiddleware({ trustedProxies: [], csrfTrustedOrigins: [] }))
+    app.post('/custom-post', (c) => c.json({ ok: true }))
+    const res = await app.request('/custom-post', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }, envWithIp('203.0.113.5'))
+    expect(res.status).toBe(401)
+  })
+})
+
 describe('auth middleware — bypass switch', () => {
   it('disabled: true → no checks fire, any request passes', async () => {
     const app = makeApp({ trustedProxies: [], csrfTrustedOrigins: [], disabled: true })

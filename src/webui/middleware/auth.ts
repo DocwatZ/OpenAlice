@@ -63,6 +63,15 @@ export function createAuthMiddleware(opts: AuthMiddlewareOptions): MiddlewareHan
     if (PUBLIC_PATH_EXACT.has(path)) return next()
     if (PUBLIC_PATH_PREFIX.some((p) => path.startsWith(p))) return next()
 
+    // SPA shell — any GET to a non-API path is public. The React bundle
+    // is the entity that decides "render the login page vs the app" by
+    // polling /api/auth/status; if we 401 the HTML itself, the user
+    // can't even reach the login UI. Mutations and any /api/* still
+    // require a session.
+    if (c.req.method === 'GET' && !path.startsWith('/api/')) {
+      return next()
+    }
+
     // Localhost passthrough — only honored when no trusted proxy is
     // configured. With a trusted proxy in front, the proxy IS at 127.0.0.1
     // from Alice's view, so trusting "localhost requests" would let every
