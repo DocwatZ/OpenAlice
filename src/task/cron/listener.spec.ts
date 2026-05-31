@@ -7,32 +7,42 @@ import { createListenerRegistry, type ListenerRegistry } from '../../core/listen
 import { createCronListener, type CronListener } from './listener.js'
 import { SessionStore } from '../../core/session.js'
 import type { CronFirePayload } from './engine.js'
-import { ConnectorCenter } from '../../core/connector-center.js'
-import { createMemoryNotificationsStore } from '../../core/notifications-store.js'
+import { createMemoryInboxStore, type IInboxStore } from '../../core/inbox-store.js'
 import { AgentWorkRunner } from '../../core/agent-work.js'
 import { createAgentWorkListener, type AgentWorkListener } from '../../core/agent-work-listener.js'
+import type { GenerateRouter } from '../../core/ai-provider-manager.js'
 import type { AgentWorkDonePayload, AgentWorkErrorPayload } from '../../core/agent-event.js'
 
 function tempPath(ext: string): string {
   return join(tmpdir(), `cron-listener-test-${randomUUID()}.${ext}`)
 }
 
-// ==================== Mock Engine ====================
+// ==================== Mock router ====================
+//
+// Post-AgentCenter-retirement the runner drives GenerateRouter directly:
+// router.resolve() → provider.generate(entries, prompt, opts), consuming
+// the ProviderEvent stream up to the terminal `done` event. The mock
+// records the prompt it was driven with and can be set to throw.
 
-function createMockEngine(response = 'AI reply') {
-  const calls: Array<{ prompt: string; session: SessionStore }> = []
+function createMockRouter(initialText = 'AI reply') {
+  let response = initialText
   let shouldFail = false
-
+  const calls: Array<{ prompt: string }> = []
+  const provider = {
+    providerTag: 'vercel-ai' as const,
+    async *generate(_entries: unknown, prompt: string) {
+      calls.push({ prompt })
+      if (shouldFail) throw new Error('engine error')
+      yield { type: 'done' as const, result: { text: response, media: [], toolCalls: [] } }
+    },
+  }
+  const router = { resolve: async () => ({ provider, profile: {} }) } as unknown as GenerateRouter
   return {
+    router,
     calls,
     setResponse(text: string) { response = text },
     setShouldFail(val: boolean) { shouldFail = val },
-    askWithSession: vi.fn(async (prompt: string, session: SessionStore) => {
-      calls.push({ prompt, session })
-      if (shouldFail) throw new Error('engine error')
-      return { text: response, media: [] }
-    }),
-    ask: vi.fn(),
+    callCount() { return calls.length },
   }
 }
 
@@ -41,23 +51,21 @@ describe('cron listener', () => {
   let registry: ListenerRegistry
   let cronListener: CronListener
   let agentWorkListener: AgentWorkListener
-  let mockEngine: ReturnType<typeof createMockEngine>
+  let mockRouter: ReturnType<typeof createMockRouter>
   let session: SessionStore
-  let connectorCenter: ConnectorCenter
-  let notificationsStore: ReturnType<typeof createMemoryNotificationsStore>
+  let inboxStore: IInboxStore
 
   beforeEach(async () => {
     eventLog = await createEventLog({ logPath: tempPath('jsonl') })
     registry = createListenerRegistry(eventLog)
     await registry.start()
-    mockEngine = createMockEngine()
+    mockRouter = createMockRouter()
     session = new SessionStore(`test/cron-${randomUUID()}`)
-    notificationsStore = createMemoryNotificationsStore()
-    connectorCenter = new ConnectorCenter({ notificationsStore })
+    inboxStore = createMemoryInboxStore()
 
     const runner = new AgentWorkRunner({
-      agentCenter: mockEngine as never,
-      connectorCenter,
+      router: mockRouter.router,
+      inboxStore,
     })
     agentWorkListener = createAgentWorkListener({ runner, registry })
     await agentWorkListener.start()
@@ -98,7 +106,7 @@ describe('cron listener', () => {
     })
 
     it('downstream agent.work.done payload carries source=cron + reply', async () => {
-      const fireEntry = await eventLog.append('cron.fire', {
+      await eventLog.append('cron.fire', {
         jobId: 'abc12345',
         jobName: 'test-job',
         payload: 'Do something',
@@ -134,23 +142,20 @@ describe('cron listener', () => {
       await new Promise((r) => setTimeout(r, 50))
 
       expect(eventLog.recent({ type: 'agent.work.requested' })).toHaveLength(0)
-      expect(mockEngine.askWithSession).not.toHaveBeenCalled()
+      expect(mockRouter.callCount()).toBe(0)
     })
 
     it('does not react to other event types', async () => {
       await eventLog.append('message.received' as never, { channel: 'web', to: 'x', prompt: 'p' })
       await new Promise((r) => setTimeout(r, 50))
-      expect(mockEngine.askWithSession).not.toHaveBeenCalled()
+      expect(mockRouter.callCount()).toBe(0)
     })
   })
 
   // ==================== Delivery ====================
 
   describe('delivery', () => {
-    it('appends AI reply to notifications store with source=cron', async () => {
-      const delivered: Array<{ text: string; source?: string }> = []
-      notificationsStore.onAppended((entry) => { delivered.push({ text: entry.text, source: entry.source }) })
-
+    it('appends AI reply to the inbox under automation:cron', async () => {
       await eventLog.append('cron.fire', {
         jobId: 'abc12345',
         jobName: 'test-job',
@@ -158,10 +163,13 @@ describe('cron listener', () => {
       } satisfies CronFirePayload)
 
       await vi.waitFor(() => {
-        expect(delivered).toHaveLength(1)
+        expect(eventLog.recent({ type: 'agent.work.done' })).toHaveLength(1)
       })
 
-      expect(delivered[0]).toEqual({ text: 'AI reply', source: 'cron' })
+      const { entries } = await inboxStore.read()
+      expect(entries).toHaveLength(1)
+      expect(entries[0].comments).toBe('AI reply')
+      expect(entries[0].workspaceId).toBe('automation:cron')
     })
   })
 
@@ -169,7 +177,7 @@ describe('cron listener', () => {
 
   describe('error handling', () => {
     it('emits agent.work.error on engine failure', async () => {
-      mockEngine.setShouldFail(true)
+      mockRouter.setShouldFail(true)
 
       await eventLog.append('cron.fire', {
         jobId: 'abc12345',
@@ -202,7 +210,7 @@ describe('cron listener', () => {
 
       await new Promise((r) => setTimeout(r, 50))
 
-      expect(mockEngine.askWithSession).not.toHaveBeenCalled()
+      expect(mockRouter.callCount()).toBe(0)
     })
 
     it('is idempotent on repeated start()', async () => {

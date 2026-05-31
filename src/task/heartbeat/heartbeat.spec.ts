@@ -1,19 +1,22 @@
 /**
  * Heartbeat tests — Pump-driven trigger source.
  *
- * Post-Pump refactor, heartbeat no longer subscribes to cron.fire.
- * It owns a private Pump. Tests trigger ticks via `heartbeat.runNow()`
- * (which delegates to `pump.runNow()`) rather than `cronEngine.runNow()`.
- *
- * The full pipeline test path:
+ * Heartbeat owns a private Pump; ticks are triggered via
+ * `heartbeat.runNow()`. The pipeline:
  *   heartbeat.runNow()
  *     → pump.runNow() → onTick
  *     → active-hours pre-filter (skip → emit agent.work.skip directly)
- *     → producer.emit('agent.work.requested') for the canonical event
- *   → agent-work-listener picks up the request
- *     → source-config-driven AgentWorkRunner.run()
- *     → notify_user inspection + dedup gate
- *     → emit agent.work.{done,skip,error}
+ *     → producer.emit('agent.work.requested')
+ *   → agent-work-listener → source-config-driven AgentWorkRunner.run()
+ *
+ * Post-AgentCenter-retirement + push-stub: heartbeat's source config
+ * outputGate is an UNCONDITIONAL skip ('stubbed'). The AI still runs each
+ * tick, but nothing is ever delivered to the inbox — heartbeat's trigger
+ * chain isn't closed in the current Harness architecture. The old
+ * notify_user-inspecting gate + HeartbeatDedup are gone. These tests
+ * cover: the stub gate, active-hours pre-filter, enable/disable, and
+ * lifecycle. The runner is driven by a mock GenerateRouter and a memory
+ * InboxStore.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
@@ -25,20 +28,16 @@ import { createListenerRegistry, type ListenerRegistry } from '../../core/listen
 import {
   createHeartbeat,
   isWithinActiveHours,
-  HeartbeatDedup,
   type Heartbeat,
   type HeartbeatConfig,
 } from './heartbeat.js'
 import { SessionStore } from '../../core/session.js'
-import { ConnectorCenter } from '../../core/connector-center.js'
-import { createMemoryNotificationsStore } from '../../core/notifications-store.js'
+import { createMemoryInboxStore, type IInboxStore } from '../../core/inbox-store.js'
 import { AgentWorkRunner } from '../../core/agent-work.js'
 import { createAgentWorkListener, type AgentWorkListener } from '../../core/agent-work-listener.js'
-import type { ToolCallSummary } from '../../ai-providers/types.js'
+import type { GenerateRouter } from '../../core/ai-provider-manager.js'
 import type {
-  AgentWorkDonePayload,
   AgentWorkSkipPayload,
-  AgentWorkErrorPayload,
 } from '../../core/agent-event.js'
 
 vi.mock('../../core/config.js', () => ({
@@ -59,35 +58,23 @@ function makeConfig(overrides: Partial<HeartbeatConfig> = {}): HeartbeatConfig {
   }
 }
 
-// ==================== Mock Engine ====================
+// ==================== Mock router ====================
+//
+// The runner drives router.resolve() → provider.generate(); the heartbeat
+// AI runs each tick regardless of the (stubbed) delivery gate. We record
+// invocations so tests can assert the AI was / wasn't called.
 
-interface MockEngineState {
-  text: string
-  toolCalls: ToolCallSummary[]
-  shouldThrow: Error | null
-}
-
-function createMockEngine(initial: Partial<MockEngineState> = {}) {
-  const state: MockEngineState = {
-    text: '',
-    toolCalls: [],
-    shouldThrow: null,
-    ...initial,
-  }
-  return {
-    state,
-    setNotifyUserCall(text: string) {
-      state.toolCalls = [{ id: randomUUID(), name: 'notify_user', input: { text } }]
+function createMockRouter() {
+  let calls = 0
+  const provider = {
+    providerTag: 'vercel-ai' as const,
+    async *generate() {
+      calls++
+      yield { type: 'done' as const, result: { text: 'heartbeat observed nothing notable', media: [], toolCalls: [] } }
     },
-    setNoToolCall() { state.toolCalls = [] },
-    setRawText(text: string) { state.text = text },
-    setShouldThrow(err: Error | null) { state.shouldThrow = err },
-    askWithSession: vi.fn(async () => {
-      if (state.shouldThrow) throw state.shouldThrow
-      return { text: state.text, media: [], toolCalls: state.toolCalls }
-    }),
-    ask: vi.fn(),
   }
+  const router = { resolve: async () => ({ provider, profile: {} }) } as unknown as GenerateRouter
+  return { router, callCount() { return calls } }
 }
 
 // ==================== Integration suite ====================
@@ -96,10 +83,9 @@ describe('heartbeat', () => {
   let eventLog: EventLog
   let listenerRegistry: ListenerRegistry
   let heartbeat: Heartbeat
-  let mockEngine: ReturnType<typeof createMockEngine>
+  let mockRouter: ReturnType<typeof createMockRouter>
   let session: SessionStore
-  let connectorCenter: ConnectorCenter
-  let notificationsStore: ReturnType<typeof createMemoryNotificationsStore>
+  let inboxStore: IInboxStore
   let agentWorkListener: AgentWorkListener
 
   beforeEach(async () => {
@@ -107,13 +93,12 @@ describe('heartbeat', () => {
     listenerRegistry = createListenerRegistry(eventLog)
     await listenerRegistry.start()
 
-    mockEngine = createMockEngine()
+    mockRouter = createMockRouter()
     session = new SessionStore(`test/heartbeat-${randomUUID()}`)
-    notificationsStore = createMemoryNotificationsStore()
-    connectorCenter = new ConnectorCenter({ notificationsStore })
+    inboxStore = createMemoryInboxStore()
     const runner = new AgentWorkRunner({
-      agentCenter: mockEngine as never,
-      connectorCenter,
+      router: mockRouter.router,
+      inboxStore,
     })
     agentWorkListener = createAgentWorkListener({ runner, registry: listenerRegistry })
     await agentWorkListener.start()
@@ -148,15 +133,10 @@ describe('heartbeat', () => {
     })
   })
 
-  // ==================== Event Handling ====================
+  // ==================== Stubbed push ====================
 
-  describe('event handling', () => {
-    it('delivers when AI calls notify_user', async () => {
-      const delivered: string[] = []
-      notificationsStore.onAppended((entry) => { delivered.push(entry.text) })
-
-      mockEngine.setNotifyUserCall('BTC dropped 5% to $87,200')
-
+  describe('stubbed push', () => {
+    it('runs the AI but delivers nothing (output gate unconditionally skips)', async () => {
       heartbeat = createHeartbeat({
         config: makeConfig(),
         agentWorkListener, registry: listenerRegistry, session,
@@ -164,74 +144,46 @@ describe('heartbeat', () => {
       await heartbeat.start()
       await heartbeat.runNow()
 
-      await vi.waitFor(() => {
-        expect(eventLog.recent({ type: 'agent.work.done' })).toHaveLength(1)
-      })
-
-      expect(delivered).toEqual(['BTC dropped 5% to $87,200'])
-      const done = eventLog.recent({ type: 'agent.work.done' })[0].payload as AgentWorkDonePayload
-      expect(done.source).toBe('heartbeat')
-      expect(done.delivered).toBe(true)
-    })
-
-    it('skips with reason=ack when AI does not call notify_user', async () => {
-      mockEngine.setRawText('Checked, nothing notable.')
-      mockEngine.setNoToolCall()
-
-      heartbeat = createHeartbeat({
-        config: makeConfig(),
-        agentWorkListener, registry: listenerRegistry, session,
-      })
-      await heartbeat.start()
-      await heartbeat.runNow()
-
+      // The skip is emitted with reason='stubbed' — the AI ran, but the
+      // gate suppressed delivery.
       await vi.waitFor(() => {
         expect(eventLog.recent({ type: 'agent.work.skip' })).toHaveLength(1)
       })
 
       const skip = eventLog.recent({ type: 'agent.work.skip' })[0].payload as AgentWorkSkipPayload
       expect(skip.source).toBe('heartbeat')
-      expect(skip.reason).toBe('ack')
+      expect(skip.reason).toBe('stubbed')
+
+      // AI was invoked (heartbeat still observes each tick)…
+      expect(mockRouter.callCount()).toBe(1)
+      // …but nothing landed in the inbox, and no done event was emitted.
+      const { entries } = await inboxStore.read()
+      expect(entries).toHaveLength(0)
       expect(eventLog.recent({ type: 'agent.work.done' })).toHaveLength(0)
     })
 
-    it('skips with reason=empty when notify_user.text is blank', async () => {
-      mockEngine.setNotifyUserCall('   ')
-
+    it('every tick is stubbed — repeated runs never deliver', async () => {
       heartbeat = createHeartbeat({
         config: makeConfig(),
         agentWorkListener, registry: listenerRegistry, session,
       })
       await heartbeat.start()
+
       await heartbeat.runNow()
-
-      await vi.waitFor(() => {
-        expect(eventLog.recent({ type: 'agent.work.skip' })).toHaveLength(1)
-      })
-
-      const skip = eventLog.recent({ type: 'agent.work.skip' })[0].payload as AgentWorkSkipPayload
-      expect(skip.reason).toBe('empty')
-    })
-
-    it('does NOT regex-parse STATUS-shaped raw text — anti-regression', async () => {
-      mockEngine.setRawText('STATUS: CHAT_YES\nCONTENT: should NOT be delivered')
-      mockEngine.setNoToolCall()
-
-      heartbeat = createHeartbeat({
-        config: makeConfig(),
-        agentWorkListener, registry: listenerRegistry, session,
-      })
-      await heartbeat.start()
       await heartbeat.runNow()
-
       await vi.waitFor(() => {
-        expect(eventLog.recent({ type: 'agent.work.skip' })).toHaveLength(1)
+        expect(eventLog.recent({ type: 'agent.work.skip' })).toHaveLength(2)
       })
 
-      const { entries } = await notificationsStore.read()
+      const { entries } = await inboxStore.read()
       expect(entries).toHaveLength(0)
+      expect(eventLog.recent({ type: 'agent.work.done' })).toHaveLength(0)
     })
+  })
 
+  // ==================== Decoupling ====================
+
+  describe('decoupling', () => {
     it('no longer subscribes to cron.fire (decoupled from cron-engine)', async () => {
       heartbeat = createHeartbeat({
         config: makeConfig(),
@@ -249,7 +201,7 @@ describe('heartbeat', () => {
       })
       await new Promise((r) => setTimeout(r, 50))
 
-      expect(mockEngine.askWithSession).not.toHaveBeenCalled()
+      expect(mockRouter.callCount()).toBe(0)
     })
   })
 
@@ -276,106 +228,11 @@ describe('heartbeat', () => {
       const skip = eventLog.recent({ type: 'agent.work.skip' })[0].payload as AgentWorkSkipPayload
       expect(skip.source).toBe('heartbeat')
       expect(skip.reason).toBe('outside-active-hours')
-      expect(mockEngine.askWithSession).not.toHaveBeenCalled()
-      // No agent.work.requested emitted (pre-emit gate)
+      // AI never invoked (pre-emit gate, no token cost)
+      expect(mockRouter.callCount()).toBe(0)
+      // No agent.work.requested emitted for heartbeat
       const reqs = eventLog.recent({ type: 'agent.work.requested' })
       expect(reqs.filter(e => (e.payload as { source: string }).source === 'heartbeat')).toHaveLength(0)
-    })
-  })
-
-  // ==================== Dedup ====================
-
-  describe('dedup', () => {
-    it('suppresses duplicate notify_user texts within the dedup window', async () => {
-      const delivered: string[] = []
-      notificationsStore.onAppended((entry) => { delivered.push(entry.text) })
-
-      mockEngine.setNotifyUserCall('BTC dropped 5%')
-
-      heartbeat = createHeartbeat({
-        config: makeConfig(),
-        agentWorkListener, registry: listenerRegistry, session,
-      })
-      await heartbeat.start()
-
-      await heartbeat.runNow()
-      await vi.waitFor(() => {
-        expect(eventLog.recent({ type: 'agent.work.done' })).toHaveLength(1)
-      })
-
-      await heartbeat.runNow()
-      await vi.waitFor(() => {
-        const skips = eventLog.recent({ type: 'agent.work.skip' })
-        expect(skips.some(s => (s.payload as AgentWorkSkipPayload).reason === 'duplicate')).toBe(true)
-      })
-
-      expect(delivered).toHaveLength(1)
-    })
-
-    it('different notify_user texts are not deduped', async () => {
-      const delivered: string[] = []
-      notificationsStore.onAppended((entry) => { delivered.push(entry.text) })
-
-      heartbeat = createHeartbeat({
-        config: makeConfig(),
-        agentWorkListener, registry: listenerRegistry, session,
-      })
-      await heartbeat.start()
-
-      mockEngine.setNotifyUserCall('First alert')
-      await heartbeat.runNow()
-      await vi.waitFor(() => { expect(delivered).toHaveLength(1) })
-
-      mockEngine.setNotifyUserCall('Second different alert')
-      await heartbeat.runNow()
-      await vi.waitFor(() => { expect(delivered).toHaveLength(2) })
-
-      expect(delivered).toEqual(['First alert', 'Second different alert'])
-    })
-  })
-
-  // ==================== Error Handling ====================
-
-  describe('error handling', () => {
-    it('emits agent.work.error on AI failure', async () => {
-      mockEngine.setShouldThrow(new Error('AI down'))
-
-      heartbeat = createHeartbeat({
-        config: makeConfig(),
-        agentWorkListener, registry: listenerRegistry, session,
-      })
-      await heartbeat.start()
-      await heartbeat.runNow()
-
-      await vi.waitFor(() => {
-        expect(eventLog.recent({ type: 'agent.work.error' })).toHaveLength(1)
-      })
-
-      const err = eventLog.recent({ type: 'agent.work.error' })[0].payload as AgentWorkErrorPayload
-      expect(err.source).toBe('heartbeat')
-      expect(err.error).toBe('AI down')
-    })
-
-    it('handles notify failure — emits done with delivered=false', async () => {
-      mockEngine.setNotifyUserCall('alert text')
-      const originalAppend = notificationsStore.append.bind(notificationsStore)
-      notificationsStore.append = async () => { throw new Error('store failed') }
-
-      heartbeat = createHeartbeat({
-        config: makeConfig(),
-        agentWorkListener, registry: listenerRegistry, session,
-      })
-      await heartbeat.start()
-      await heartbeat.runNow()
-
-      await vi.waitFor(() => {
-        expect(eventLog.recent({ type: 'agent.work.done' })).toHaveLength(1)
-      })
-
-      const done = eventLog.recent({ type: 'agent.work.done' })[0].payload as AgentWorkDonePayload
-      expect(done.delivered).toBe(false)
-
-      notificationsStore.append = originalAppend
     })
   })
 
@@ -393,7 +250,7 @@ describe('heartbeat', () => {
       await heartbeat.runNow()
       await new Promise((r) => setTimeout(r, 50))
 
-      expect(mockEngine.askWithSession).not.toHaveBeenCalled()
+      expect(mockRouter.callCount()).toBe(0)
     })
   })
 
@@ -441,21 +298,19 @@ describe('heartbeat', () => {
     })
 
     it('runNow ignores the enabled flag (always fires for manual trigger)', async () => {
-      const delivered: string[] = []
-      notificationsStore.onAppended((entry) => { delivered.push(entry.text) })
-
-      mockEngine.setNotifyUserCall('manual-fire')
-
       heartbeat = createHeartbeat({
         config: makeConfig({ enabled: false }),
         agentWorkListener, registry: listenerRegistry, session,
       })
       await heartbeat.start()
-      // Even though enabled=false, manual runNow should still work
+      // Even though enabled=false, manual runNow should still drive a tick
+      // (which then hits the stub gate and skips).
       await heartbeat.runNow()
 
-      await vi.waitFor(() => { expect(delivered).toHaveLength(1) })
-      expect(delivered[0]).toBe('manual-fire')
+      await vi.waitFor(() => {
+        expect(eventLog.recent({ type: 'agent.work.skip' })).toHaveLength(1)
+      })
+      expect(mockRouter.callCount()).toBe(1)
     })
   })
 })
@@ -500,42 +355,6 @@ describe('isWithinActiveHours', () => {
     expect(isWithinActiveHours(
       { start: 'invalid', end: '22:00', timezone: 'local' },
     )).toBe(true)
-  })
-})
-
-// ==================== Unit: HeartbeatDedup ====================
-
-describe('HeartbeatDedup', () => {
-  it('does not flag first message as duplicate', () => {
-    const d = new HeartbeatDedup()
-    expect(d.isDuplicate('hello')).toBe(false)
-  })
-
-  it('flags same text within window', () => {
-    const d = new HeartbeatDedup(1000)
-    d.record('hello', 100)
-    expect(d.isDuplicate('hello', 500)).toBe(true)
-  })
-
-  it('does not flag same text after window expires', () => {
-    const d = new HeartbeatDedup(1000)
-    d.record('hello', 100)
-    expect(d.isDuplicate('hello', 1200)).toBe(false)
-  })
-
-  it('does not flag different text', () => {
-    const d = new HeartbeatDedup(1000)
-    d.record('hello', 100)
-    expect(d.isDuplicate('world', 500)).toBe(false)
-  })
-
-  it('exposes lastText', () => {
-    const d = new HeartbeatDedup()
-    expect(d.lastText).toBeNull()
-    d.record('first', 100)
-    expect(d.lastText).toBe('first')
-    d.record('second', 200)
-    expect(d.lastText).toBe('second')
   })
 })
 

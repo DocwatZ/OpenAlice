@@ -5,49 +5,77 @@
  * async task outside chat" path (heartbeat / cron / task-router /
  * future async triggers). Test coverage here is intentionally thorough:
  * gate combinations, error paths, tool-call observation, hook
- * misbehaviour. Trigger-source-specific tests (active-hours, dedup,
- * STATUS replacement) live in the heartbeat / cron / task-router spec
- * files; this file exercises the abstraction itself.
+ * misbehaviour. Trigger-source-specific tests (active-hours, heartbeat
+ * stub gate) live in the heartbeat / cron spec files; this file
+ * exercises the abstraction itself.
+ *
+ * Post-AgentCenter-retirement: the runner drives GenerateRouter directly
+ * (a mock provider yields ProviderEvents ending in `done`) and delivers
+ * to the InboxStore under a synthetic `automation:<source>` workspace id.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { AgentWorkRunner, type AgentWorkRequest, type AgentWorkEmitFn } from './agent-work.js'
-import type { AgentCenter } from './agent-center.js'
-import { ConnectorCenter } from './connector-center.js'
-import { createMemoryNotificationsStore, type INotificationsStore } from './notifications-store.js'
-import type { ProviderResult, ToolCallSummary } from '../ai-providers/types.js'
+import type { GenerateRouter } from './ai-provider-manager.js'
+import type { ISessionStore } from './session.js'
+import { createMemoryInboxStore, type IInboxStore } from './inbox-store.js'
+import type { ToolCallSummary } from '../ai-providers/types.js'
 
 // ==================== Helpers ====================
 
-interface AgentCenterMock {
-  askWithSession: ReturnType<typeof vi.fn>
-  setResult(result: Partial<ProviderResult>): void
+interface RouterMock {
+  router: GenerateRouter
+  setResult(result: { text?: string; toolCalls?: ToolCallSummary[] }): void
   setShouldThrow(err: Error | null): void
   callCount(): number
   lastCall(): { prompt: string; preamble: string | undefined } | null
 }
 
-/** Mocks AgentCenter.askWithSession with a Promise-shaped return.
- *  We exploit StreamableResult's PromiseLike contract — the runner
- *  awaits the result, so a plain Promise mock satisfies it. */
-function createMockAgentCenter(): AgentCenterMock {
-  let result: ProviderResult = { text: 'mock reply', media: [] }
+/** Mocks a GenerateRouter whose resolved provider yields a scripted
+ *  ProviderEvent stream. The runner consumes provider.generate() and
+ *  awaits the `done` event — so we yield optional tool_use events then a
+ *  terminal done carrying the reply text. */
+function createMockRouter(): RouterMock {
+  let result: { text: string; toolCalls: ToolCallSummary[] } = { text: 'mock reply', toolCalls: [] }
   let shouldThrow: Error | null = null
   const calls: Array<{ prompt: string; preamble: string | undefined }> = []
 
-  const askWithSession = vi.fn(async (prompt: string, _session: unknown, opts?: { historyPreamble?: string }) => {
-    calls.push({ prompt, preamble: opts?.historyPreamble })
-    if (shouldThrow) throw shouldThrow
-    return result
-  })
+  const provider = {
+    providerTag: 'vercel-ai' as const,
+    // eslint-disable-next-line require-yield
+    async *generate(_entries: unknown, prompt: string, opts?: { historyPreamble?: string }) {
+      calls.push({ prompt, preamble: opts?.historyPreamble })
+      if (shouldThrow) throw shouldThrow
+      for (const tc of result.toolCalls) {
+        yield { type: 'tool_use' as const, id: tc.id, name: tc.name, input: tc.input }
+      }
+      yield { type: 'done' as const, result: { text: result.text, media: [], toolCalls: result.toolCalls } }
+    },
+  }
+
+  const router = {
+    resolve: async () => ({ provider, profile: {} }),
+  } as unknown as GenerateRouter
 
   return {
-    askWithSession,
-    setResult(next) { result = { text: 'mock reply', media: [], ...next } },
+    router,
+    setResult(next) { result = { text: 'mock reply', toolCalls: [], ...next } },
     setShouldThrow(err) { shouldThrow = err },
     callCount() { return calls.length },
     lastCall() { return calls[calls.length - 1] ?? null },
   }
+}
+
+/** Minimal session — the runner appends the prompt, reads the active
+ *  window, and appends the assistant reply. None of the bodies matter to
+ *  these tests; we just need the methods to exist and resolve. */
+function createMockSession(): ISessionStore {
+  return {
+    id: 'test/session',
+    appendUser: vi.fn(async () => {}),
+    appendAssistant: vi.fn(async () => {}),
+    readActive: vi.fn(async () => []),
+  } as unknown as ISessionStore
 }
 
 /** Records emit() calls for assertion. */
@@ -64,7 +92,7 @@ function createEmitRecorder() {
 function makeRequest(overrides: Partial<AgentWorkRequest> = {}): AgentWorkRequest {
   return {
     prompt: 'do something',
-    session: { id: 'test/session' } as never, // session not introspected by runner; fake is fine
+    session: createMockSession(),
     preamble: 'You are operating in test context.',
     metadata: { source: 'cron' },
     emitNames: { done: 'cron.done', skip: 'cron.skip', error: 'cron.error' },
@@ -81,31 +109,36 @@ function makeRequest(overrides: Partial<AgentWorkRequest> = {}): AgentWorkReques
   }
 }
 
-function createRunner(agentCenter: AgentCenterMock, store?: INotificationsStore) {
-  const notificationsStore = store ?? createMemoryNotificationsStore()
-  const connectorCenter = new ConnectorCenter({ notificationsStore })
+function createRunner(mock: RouterMock, store?: IInboxStore) {
+  const inboxStore = store ?? createMemoryInboxStore()
   const logger = { warn: vi.fn(), error: vi.fn() }
   const runner = new AgentWorkRunner({
-    agentCenter: agentCenter as unknown as AgentCenter,
-    connectorCenter,
+    router: mock.router,
+    inboxStore,
     logger,
   })
-  return { runner, connectorCenter, notificationsStore, logger }
+  return { runner, inboxStore, logger }
 }
+
+// Restore per-test spies (e.g. an inboxStore.append rejection) so a
+// mocked rejection in one test can't bleed into the next.
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 // ==================== Tests ====================
 
 describe('AgentWorkRunner — default behaviour (no gates)', () => {
-  let mock: AgentCenterMock
+  let mock: RouterMock
   let runner: AgentWorkRunner
-  let store: INotificationsStore
+  let store: IInboxStore
   let emitRec: ReturnType<typeof createEmitRecorder>
 
   beforeEach(() => {
-    mock = createMockAgentCenter()
+    mock = createMockRouter()
     const made = createRunner(mock)
     runner = made.runner
-    store = made.notificationsStore
+    store = made.inboxStore
     emitRec = createEmitRecorder()
   })
 
@@ -116,13 +149,13 @@ describe('AgentWorkRunner — default behaviour (no gates)', () => {
     expect(mock.lastCall()?.preamble).toBe('context X')
   })
 
-  it('delivers result.text via connectorCenter.notify', async () => {
+  it('delivers result.text to the inbox under automation:<source>', async () => {
     mock.setResult({ text: 'AI says hi' })
     await runner.run(makeRequest(), emitRec.emit)
     const { entries } = await store.read()
     expect(entries).toHaveLength(1)
-    expect(entries[0].text).toBe('AI says hi')
-    expect(entries[0].source).toBe('cron')
+    expect(entries[0].comments).toBe('AI says hi')
+    expect(entries[0].workspaceId).toBe('automation:cron')
   })
 
   it('emits done with delivered=true and durationMs >= 0', async () => {
@@ -149,17 +182,17 @@ describe('AgentWorkRunner — default behaviour (no gates)', () => {
 })
 
 describe('AgentWorkRunner — inputGate', () => {
-  let mock: AgentCenterMock
+  let mock: RouterMock
   let runner: AgentWorkRunner
-  let store: INotificationsStore
+  let store: IInboxStore
   let logger: { warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> }
   let emitRec: ReturnType<typeof createEmitRecorder>
 
   beforeEach(() => {
-    mock = createMockAgentCenter()
+    mock = createMockRouter()
     const made = createRunner(mock)
     runner = made.runner
-    store = made.notificationsStore
+    store = made.inboxStore
     logger = made.logger
     emitRec = createEmitRecorder()
   })
@@ -205,7 +238,7 @@ describe('AgentWorkRunner — inputGate', () => {
     expect(result.skipReason).toBe('outside-hours')
   })
 
-  it('skip → no notification appended', async () => {
+  it('skip → no inbox entry appended', async () => {
     await runner.run(
       makeRequest({
         inputGate: () => ({ reason: 'gated', payload: {} }),
@@ -242,16 +275,16 @@ describe('AgentWorkRunner — inputGate', () => {
 })
 
 describe('AgentWorkRunner — outputGate', () => {
-  let mock: AgentCenterMock
+  let mock: RouterMock
   let runner: AgentWorkRunner
-  let store: INotificationsStore
+  let store: IInboxStore
   let emitRec: ReturnType<typeof createEmitRecorder>
 
   beforeEach(() => {
-    mock = createMockAgentCenter()
+    mock = createMockRouter()
     const made = createRunner(mock)
     runner = made.runner
-    store = made.notificationsStore
+    store = made.inboxStore
     emitRec = createEmitRecorder()
   })
 
@@ -259,7 +292,7 @@ describe('AgentWorkRunner — outputGate', () => {
     mock.setResult({ text: 'untouched reply' })
     await runner.run(makeRequest(), emitRec.emit)
     const { entries } = await store.read()
-    expect(entries[0].text).toBe('untouched reply')
+    expect(entries[0].comments).toBe('untouched reply')
   })
 
   it('deliver decision uses the gate text not result.text', async () => {
@@ -271,10 +304,10 @@ describe('AgentWorkRunner — outputGate', () => {
       emitRec.emit,
     )
     const { entries } = await store.read()
-    expect(entries[0].text).toBe('rewritten by gate')
+    expect(entries[0].comments).toBe('rewritten by gate')
   })
 
-  it('skip decision → emits skip event with reason, no notify', async () => {
+  it('skip decision → emits skip event with reason, no inbox entry', async () => {
     await runner.run(
       makeRequest({
         outputGate: () => ({ kind: 'skip', reason: 'duplicate', payload: { reason: 'duplicate' } }),
@@ -302,7 +335,6 @@ describe('AgentWorkRunner — outputGate', () => {
     const observed: Array<{ text: string; mediaLen: number; toolCallCount: number }> = []
     mock.setResult({
       text: 'AI text',
-      media: [{ type: 'image', path: '/tmp/x.png' }],
       toolCalls: [{ id: 't1', name: 'foo', input: { x: 1 } }],
     })
     await runner.run(
@@ -319,10 +351,12 @@ describe('AgentWorkRunner — outputGate', () => {
       emitRec.emit,
     )
     expect(observed).toHaveLength(1)
-    expect(observed[0]).toEqual({ text: 'AI text', mediaLen: 1, toolCallCount: 1 })
+    // media is always [] post-rewire (inbox renders workspace files, not
+    // inline binaries); the toolCall surfaced from the stream is observed.
+    expect(observed[0]).toEqual({ text: 'AI text', mediaLen: 0, toolCallCount: 1 })
   })
 
-  it('toolCalls undefined in result → probe gets empty array', async () => {
+  it('no tool calls in stream → probe gets empty array', async () => {
     let observedLen = -1
     mock.setResult({ text: 'reply' /* no toolCalls */ })
     await runner.run(
@@ -338,79 +372,80 @@ describe('AgentWorkRunner — outputGate', () => {
   })
 })
 
-describe('AgentWorkRunner — notify_user-style tool inspection', () => {
-  let mock: AgentCenterMock
+describe('AgentWorkRunner — tool-inspecting outputGate', () => {
+  let mock: RouterMock
   let runner: AgentWorkRunner
-  let store: INotificationsStore
+  let store: IInboxStore
   let emitRec: ReturnType<typeof createEmitRecorder>
 
   beforeEach(() => {
-    mock = createMockAgentCenter()
+    mock = createMockRouter()
     const made = createRunner(mock)
     runner = made.runner
-    store = made.notificationsStore
+    store = made.inboxStore
     emitRec = createEmitRecorder()
   })
 
-  /** The reference outputGate shape that heartbeat will use to replace
-   *  the STATUS regex protocol. Tested here so the AgentWork primitive
-   *  guarantees this idiom keeps working. */
-  function notifyUserGate(probe: { text: string; media: unknown[]; toolCalls: ReadonlyArray<ToolCallSummary> }) {
-    const call = probe.toolCalls.find((c) => c.name === 'notify_user')
+  /** A source's outputGate can inspect the observed tool calls and
+   *  deliver a tool's args instead of the raw model text. This is the
+   *  generic idiom the (now-deleted) notify_user gate relied on; the
+   *  AgentWork primitive still guarantees it works for any tool name. */
+  function pushToolGate(probe: { text: string; media: never[]; toolCalls: ReadonlyArray<ToolCallSummary> }) {
+    const call = probe.toolCalls.find((c) => c.name === 'push')
     if (!call) return { kind: 'skip' as const, reason: 'ack', payload: { reason: 'ack' } }
     const text = ((call.input ?? {}) as { text?: string }).text ?? ''
     if (!text.trim()) return { kind: 'skip' as const, reason: 'empty', payload: { reason: 'empty' } }
-    return { kind: 'deliver' as const, text, media: probe.media as never }
+    return { kind: 'deliver' as const, text, media: probe.media }
   }
 
-  it('AI calls notify_user → delivers tool args, not result.text', async () => {
+  it('AI calls the tool → delivers tool args, not result.text', async () => {
     mock.setResult({
-      text: 'I have decided to notify the user', // raw AI text — should NOT be delivered
-      toolCalls: [{ id: 't1', name: 'notify_user', input: { text: 'BTC dropped 5%', urgency: 'important' } }],
+      text: 'I have decided to push', // raw model text — should NOT be delivered
+      toolCalls: [{ id: 't1', name: 'push', input: { text: 'BTC dropped 5%', urgency: 'important' } }],
     })
-    await runner.run(makeRequest({ outputGate: notifyUserGate }), emitRec.emit)
+    await runner.run(makeRequest({ outputGate: pushToolGate }), emitRec.emit)
     const { entries } = await store.read()
     expect(entries).toHaveLength(1)
-    expect(entries[0].text).toBe('BTC dropped 5%')
+    expect(entries[0].comments).toBe('BTC dropped 5%')
   })
 
-  it('AI does not call notify_user → skip with reason=ack', async () => {
+  it('AI does not call the tool → skip with reason=ack', async () => {
     mock.setResult({ text: 'nothing to report', toolCalls: [] })
-    const result = await runner.run(makeRequest({ outputGate: notifyUserGate }), emitRec.emit)
+    const result = await runner.run(makeRequest({ outputGate: pushToolGate }), emitRec.emit)
     expect(result.skipReason).toBe('ack')
     expect((await store.read()).entries).toHaveLength(0)
   })
 
-  it('AI calls notify_user with empty text → skip reason=empty', async () => {
+  it('AI calls the tool with empty text → skip reason=empty', async () => {
     mock.setResult({
       text: '',
-      toolCalls: [{ id: 't1', name: 'notify_user', input: { text: '   ' } }],
+      toolCalls: [{ id: 't1', name: 'push', input: { text: '   ' } }],
     })
-    const result = await runner.run(makeRequest({ outputGate: notifyUserGate }), emitRec.emit)
+    const result = await runner.run(makeRequest({ outputGate: pushToolGate }), emitRec.emit)
     expect(result.skipReason).toBe('empty')
   })
 })
 
 describe('AgentWorkRunner — AI invocation errors', () => {
-  let mock: AgentCenterMock
+  let mock: RouterMock
   let runner: AgentWorkRunner
-  let store: INotificationsStore
+  let store: IInboxStore
   let emitRec: ReturnType<typeof createEmitRecorder>
 
   beforeEach(() => {
-    mock = createMockAgentCenter()
+    mock = createMockRouter()
     const made = createRunner(mock)
     runner = made.runner
-    store = made.notificationsStore
+    store = made.inboxStore
     emitRec = createEmitRecorder()
   })
 
   it('AI throws → emits error event with caller-shaped payload', async () => {
-    mock.setShouldThrow(new Error('engine boom'))
+    mock.setShouldThrow(new Error('provider boom'))
     await runner.run(makeRequest(), emitRec.emit)
     expect(emitRec.events).toHaveLength(1)
     expect(emitRec.events[0].type).toBe('cron.error')
-    expect(emitRec.events[0].payload).toMatchObject({ error: 'engine boom' })
+    expect(emitRec.events[0].payload).toMatchObject({ error: 'provider boom' })
   })
 
   it('AI throws → outcome=errored', async () => {
@@ -419,7 +454,7 @@ describe('AgentWorkRunner — AI invocation errors', () => {
     expect(result.outcome).toBe('errored')
   })
 
-  it('AI throws → no notification appended', async () => {
+  it('AI throws → no inbox entry appended', async () => {
     mock.setShouldThrow(new Error('boom'))
     await runner.run(makeRequest(), emitRec.emit)
     expect((await store.read()).entries).toHaveLength(0)
@@ -450,27 +485,20 @@ describe('AgentWorkRunner — AI invocation errors', () => {
   })
 })
 
-describe('AgentWorkRunner — notify failure', () => {
-  let mock: AgentCenterMock
-  let store: INotificationsStore
+describe('AgentWorkRunner — inbox append failure', () => {
+  let mock: RouterMock
   let emitRec: ReturnType<typeof createEmitRecorder>
 
   beforeEach(() => {
-    mock = createMockAgentCenter()
-    store = createMemoryNotificationsStore()
+    mock = createMockRouter()
     emitRec = createEmitRecorder()
   })
 
-  it('notify throw → done event emitted with delivered=false', async () => {
-    // Inject a connectorCenter whose notify throws
-    const connectorCenter = new ConnectorCenter({ notificationsStore: store })
-    vi.spyOn(connectorCenter, 'notify').mockRejectedValue(new Error('notify boom'))
+  it('append throw → done event emitted with delivered=false', async () => {
+    const inboxStore = createMemoryInboxStore()
+    vi.spyOn(inboxStore, 'append').mockRejectedValue(new Error('inbox boom'))
     const logger = { warn: vi.fn(), error: vi.fn() }
-    const runner = new AgentWorkRunner({
-      agentCenter: mock as unknown as AgentCenter,
-      connectorCenter,
-      logger,
-    })
+    const runner = new AgentWorkRunner({ router: mock.router, inboxStore, logger })
 
     await runner.run(makeRequest(), emitRec.emit)
 
@@ -480,24 +508,24 @@ describe('AgentWorkRunner — notify failure', () => {
     expect(logger.warn).toHaveBeenCalled()
   })
 
-  it('notify throw → outcome still delivered (work itself succeeded)', async () => {
-    const connectorCenter = new ConnectorCenter({ notificationsStore: store })
-    vi.spyOn(connectorCenter, 'notify').mockRejectedValue(new Error('notify boom'))
+  it('append throw → outcome still delivered (work itself succeeded)', async () => {
+    const inboxStore = createMemoryInboxStore()
+    vi.spyOn(inboxStore, 'append').mockRejectedValue(new Error('inbox boom'))
     const runner = new AgentWorkRunner({
-      agentCenter: mock as unknown as AgentCenter,
-      connectorCenter,
+      router: mock.router,
+      inboxStore,
       logger: { warn: vi.fn(), error: vi.fn() },
     })
     const result = await runner.run(makeRequest(), emitRec.emit)
     expect(result.outcome).toBe('delivered')
   })
 
-  it('notify throw → onDelivered NOT called', async () => {
-    const connectorCenter = new ConnectorCenter({ notificationsStore: store })
-    vi.spyOn(connectorCenter, 'notify').mockRejectedValue(new Error('notify boom'))
+  it('append throw → onDelivered NOT called', async () => {
+    const inboxStore = createMemoryInboxStore()
+    vi.spyOn(inboxStore, 'append').mockRejectedValue(new Error('inbox boom'))
     const runner = new AgentWorkRunner({
-      agentCenter: mock as unknown as AgentCenter,
-      connectorCenter,
+      router: mock.router,
+      inboxStore,
       logger: { warn: vi.fn(), error: vi.fn() },
     })
     const onDelivered = vi.fn()
@@ -507,20 +535,20 @@ describe('AgentWorkRunner — notify failure', () => {
 })
 
 describe('AgentWorkRunner — onDelivered hook', () => {
-  let mock: AgentCenterMock
+  let mock: RouterMock
   let runner: AgentWorkRunner
   let logger: { warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> }
   let emitRec: ReturnType<typeof createEmitRecorder>
 
   beforeEach(() => {
-    mock = createMockAgentCenter()
+    mock = createMockRouter()
     const made = createRunner(mock)
     runner = made.runner
     logger = made.logger
     emitRec = createEmitRecorder()
   })
 
-  it('called with delivered text after successful notify', async () => {
+  it('called with delivered text after successful append', async () => {
     mock.setResult({ text: 'hello' })
     const onDelivered = vi.fn()
     await runner.run(makeRequest({ onDelivered }), emitRec.emit)
@@ -563,13 +591,12 @@ describe('AgentWorkRunner — onDelivered hook', () => {
 
 describe('AgentWorkRunner — clock injection', () => {
   it('durationMs uses injected now()', async () => {
-    const mock = createMockAgentCenter()
-    const store = createMemoryNotificationsStore()
-    const connectorCenter = new ConnectorCenter({ notificationsStore: store })
+    const mock = createMockRouter()
+    const inboxStore = createMemoryInboxStore()
     let t = 1000
     const runner = new AgentWorkRunner({
-      agentCenter: mock as unknown as AgentCenter,
-      connectorCenter,
+      router: mock.router,
+      inboxStore,
       now: () => {
         const v = t
         t += 250 // every call advances by 250ms
@@ -585,29 +612,30 @@ describe('AgentWorkRunner — clock injection', () => {
   })
 })
 
-describe('AgentWorkRunner — source label flows through', () => {
-  it('connectorCenter receives metadata.source as the source label', async () => {
-    const mock = createMockAgentCenter()
-    const store = createMemoryNotificationsStore()
-    const connectorCenter = new ConnectorCenter({ notificationsStore: store })
-    const notifySpy = vi.spyOn(connectorCenter, 'notify')
+describe('AgentWorkRunner — source label flows through to the inbox', () => {
+  it('inbox entry carries the source in its workspace id + label', async () => {
+    const mock = createMockRouter()
+    const inboxStore = createMemoryInboxStore()
+    const appendSpy = vi.spyOn(inboxStore, 'append')
     const runner = new AgentWorkRunner({
-      agentCenter: mock as unknown as AgentCenter,
-      connectorCenter,
+      router: mock.router,
+      inboxStore,
       logger: { warn: vi.fn(), error: vi.fn() },
     })
     const emitRec = createEmitRecorder()
     await runner.run(makeRequest({ metadata: { source: 'heartbeat' } }), emitRec.emit)
-    expect(notifySpy).toHaveBeenCalledWith(
-      'mock reply',
-      expect.objectContaining({ source: 'heartbeat' }),
+    expect(appendSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'automation:heartbeat',
+        workspaceLabel: 'Automation · heartbeat',
+      }),
     )
   })
 })
 
 describe('AgentWorkRunner — concurrent runs (stateless runner)', () => {
   it('two parallel run() calls do not interfere', async () => {
-    const mock = createMockAgentCenter()
+    const mock = createMockRouter()
     const made = createRunner(mock)
     const emit1 = createEmitRecorder()
     const emit2 = createEmitRecorder()

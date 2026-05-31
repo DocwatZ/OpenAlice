@@ -6,8 +6,11 @@
  * emission with source + metadata, unknown-source drop behaviour,
  * per-source gate application, multi-source independence.
  *
- * The AgentWorkRunner itself is covered in agent-work.spec.ts; this
- * file tests the listener that sits in front of it.
+ * Runs end-to-end through a real eventLog + registry + AgentWorkRunner.
+ * Post-AgentCenter-retirement: the runner is driven by a mock
+ * GenerateRouter (whose provider yields a scripted ProviderEvent stream)
+ * and delivers to a memory InboxStore. The runner internals are covered
+ * in agent-work.spec.ts; this file tests the listener in front of it.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
@@ -16,13 +19,12 @@ import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { createEventLog, type EventLog } from './event-log.js'
 import { createListenerRegistry, type ListenerRegistry } from './listener-registry.js'
-import { ConnectorCenter } from './connector-center.js'
-import { createMemoryNotificationsStore, type INotificationsStore } from './notifications-store.js'
+import { createMemoryInboxStore, type IInboxStore } from './inbox-store.js'
 import { SessionStore } from './session.js'
 import { AgentWorkRunner } from './agent-work.js'
 import { createAgentWorkListener, type AgentWorkListener } from './agent-work-listener.js'
-import type { AgentCenter } from './agent-center.js'
-import type { ProviderResult, ToolCallSummary } from '../ai-providers/types.js'
+import type { GenerateRouter } from './ai-provider-manager.js'
+import type { ToolCallSummary } from '../ai-providers/types.js'
 import type { AgentWorkDonePayload, AgentWorkSkipPayload, AgentWorkErrorPayload } from './agent-event.js'
 
 // ==================== Helpers ====================
@@ -31,25 +33,35 @@ function tempPath(ext: string): string {
   return join(tmpdir(), `agent-work-listener-test-${randomUUID()}.${ext}`)
 }
 
-interface MockAgentCenter {
-  askWithSession: ReturnType<typeof vi.fn>
-  setResult(result: Partial<ProviderResult>): void
+interface MockRouter {
+  router: GenerateRouter
+  setResult(result: { text?: string; toolCalls?: ToolCallSummary[] }): void
   setShouldThrow(err: Error | null): void
   callCount(): number
 }
 
-function createMockAgentCenter(): MockAgentCenter {
-  let result: ProviderResult = { text: 'mock reply', media: [] }
+/** Mocks a GenerateRouter whose resolved provider yields a scripted
+ *  ProviderEvent stream ending in a `done` event. Mirrors how the runner
+ *  drives router.resolve() → provider.generate() in production. */
+function createMockRouter(): MockRouter {
+  let result: { text: string; toolCalls: ToolCallSummary[] } = { text: 'mock reply', toolCalls: [] }
   let shouldThrow: Error | null = null
   let calls = 0
-  const askWithSession = vi.fn(async () => {
-    calls++
-    if (shouldThrow) throw shouldThrow
-    return result
-  })
+  const provider = {
+    providerTag: 'vercel-ai' as const,
+    async *generate() {
+      calls++
+      if (shouldThrow) throw shouldThrow
+      for (const tc of result.toolCalls) {
+        yield { type: 'tool_use' as const, id: tc.id, name: tc.name, input: tc.input }
+      }
+      yield { type: 'done' as const, result: { text: result.text, media: [], toolCalls: result.toolCalls } }
+    },
+  }
+  const router = { resolve: async () => ({ provider, profile: {} }) } as unknown as GenerateRouter
   return {
-    askWithSession,
-    setResult(next) { result = { text: 'mock reply', media: [], ...next } },
+    router,
+    setResult(next) { result = { text: 'mock reply', toolCalls: [], ...next } },
     setShouldThrow(err) { shouldThrow = err },
     callCount() { return calls },
   }
@@ -60,9 +72,8 @@ function createMockAgentCenter(): MockAgentCenter {
 describe('AgentWorkListener', () => {
   let eventLog: EventLog
   let registry: ListenerRegistry
-  let mockAgent: MockAgentCenter
-  let store: INotificationsStore
-  let connectorCenter: ConnectorCenter
+  let mockRouter: MockRouter
+  let store: IInboxStore
   let runner: AgentWorkRunner
   let listener: AgentWorkListener
 
@@ -70,12 +81,11 @@ describe('AgentWorkListener', () => {
     eventLog = await createEventLog({ logPath: tempPath('jsonl') })
     registry = createListenerRegistry(eventLog)
     await registry.start()
-    mockAgent = createMockAgentCenter()
-    store = createMemoryNotificationsStore()
-    connectorCenter = new ConnectorCenter({ notificationsStore: store })
+    mockRouter = createMockRouter()
+    store = createMemoryInboxStore()
     runner = new AgentWorkRunner({
-      agentCenter: mockAgent as unknown as AgentCenter,
-      connectorCenter,
+      router: mockRouter.router,
+      inboxStore: store,
       logger: { warn: vi.fn(), error: vi.fn() },
     })
     listener = createAgentWorkListener({
@@ -121,7 +131,6 @@ describe('AgentWorkListener', () => {
       listener.registerSource({ source: 'cron', session: new SessionStore('test/cron'), preamble: preamble1 })
       listener.registerSource({ source: 'cron', session: new SessionStore('test/cron'), preamble: preamble2 })
       expect(listener.listSources()).toEqual(['cron'])
-      // Verify the second config is the active one (will be confirmed via dispatch below in a separate test)
     })
   })
 
@@ -147,7 +156,7 @@ describe('AgentWorkListener', () => {
 
     it('emits agent.work.done with the source baked into payload', async () => {
       listener.registerSource({ source: 'task', session: new SessionStore('test/task'), preamble: () => 'task' })
-      mockAgent.setResult({ text: 'task reply' })
+      mockRouter.setResult({ text: 'task reply' })
 
       await eventLog.append('agent.work.requested', {
         source: 'task',
@@ -236,7 +245,7 @@ describe('AgentWorkListener', () => {
       await new Promise((r) => setTimeout(r, 50))
 
       expect(logger.warn).toHaveBeenCalled()
-      expect(logger.warn.mock.calls[0][0]).toContain("no source registered")
+      expect(logger.warn.mock.calls[0][0]).toContain('no source registered')
       // No done / skip / error emitted
       expect(eventLog.recent({ type: 'agent.work.done' })).toHaveLength(0)
       expect(eventLog.recent({ type: 'agent.work.skip' })).toHaveLength(0)
@@ -247,24 +256,26 @@ describe('AgentWorkListener', () => {
   // ==================== Gate application ====================
 
   describe('outputGate from source config', () => {
-    /** notify_user-style gate, exercised end-to-end through the listener. */
-    function notifyUserGate(probe: { text: string; media: unknown[]; toolCalls: ReadonlyArray<ToolCallSummary> }) {
-      const call = probe.toolCalls.find((c) => c.name === 'notify_user')
+    /** Generic tool-inspecting gate: deliver the args of a `push` tool
+     *  call, else skip with reason=ack. This is the idiom the (deleted)
+     *  notify_user gate used; the listener must thread it to the runner. */
+    function pushToolGate(probe: { text: string; media: unknown[]; toolCalls: ReadonlyArray<ToolCallSummary> }) {
+      const call = probe.toolCalls.find((c) => c.name === 'push')
       if (!call) return { kind: 'skip' as const, reason: 'ack', payload: {} }
       const text = ((call.input ?? {}) as { text?: string }).text ?? ''
       return { kind: 'deliver' as const, text, media: probe.media as never }
     }
 
-    it('delivers when AI calls notify_user', async () => {
+    it('delivers the tool args when AI calls the push tool', async () => {
       listener.registerSource({
         source: 'heartbeat',
         session: new SessionStore('test/hb'),
         preamble: () => 'hb',
-        outputGate: notifyUserGate,
+        outputGate: pushToolGate,
       })
-      mockAgent.setResult({
+      mockRouter.setResult({
         text: 'raw',
-        toolCalls: [{ id: 't1', name: 'notify_user', input: { text: 'BTC alert' } }],
+        toolCalls: [{ id: 't1', name: 'push', input: { text: 'BTC alert' } }],
       })
 
       await eventLog.append('agent.work.requested', {
@@ -276,13 +287,13 @@ describe('AgentWorkListener', () => {
       })
 
       const done = eventLog.recent({ type: 'agent.work.done' })[0].payload as AgentWorkDonePayload
-      // The runner delivers via connectorCenter; reply comes from buildDonePayload (result.text not the gate text)
       expect(done.source).toBe('heartbeat')
       expect(done.delivered).toBe(true)
 
-      // What actually got pushed to the user is the gate's text
+      // What actually landed in the inbox is the gate's text
       const { entries } = await store.read()
-      expect(entries[0].text).toBe('BTC alert')
+      expect(entries[0].comments).toBe('BTC alert')
+      expect(entries[0].workspaceId).toBe('automation:heartbeat')
     })
 
     it('skips when outputGate returns skip — emits agent.work.skip', async () => {
@@ -290,9 +301,9 @@ describe('AgentWorkListener', () => {
         source: 'heartbeat',
         session: new SessionStore('test/hb'),
         preamble: () => 'hb',
-        outputGate: notifyUserGate,
+        outputGate: pushToolGate,
       })
-      mockAgent.setResult({ text: 'no notify intent', toolCalls: [] })
+      mockRouter.setResult({ text: 'no push intent', toolCalls: [] })
 
       await eventLog.append('agent.work.requested', {
         source: 'heartbeat',
@@ -314,12 +325,12 @@ describe('AgentWorkListener', () => {
         source: 'heartbeat',
         session: new SessionStore('test/hb'),
         preamble: () => 'hb',
-        outputGate: notifyUserGate,
+        outputGate: pushToolGate,
         onDelivered,
       })
 
-      // Skip case — no notify_user call
-      mockAgent.setResult({ text: '', toolCalls: [] })
+      // Skip case — no push call
+      mockRouter.setResult({ text: '', toolCalls: [] })
       await eventLog.append('agent.work.requested', { source: 'heartbeat', prompt: 'p1' })
       await vi.waitFor(() => {
         expect(eventLog.recent({ type: 'agent.work.skip' })).toHaveLength(1)
@@ -327,9 +338,9 @@ describe('AgentWorkListener', () => {
       expect(onDelivered).not.toHaveBeenCalled()
 
       // Deliver case
-      mockAgent.setResult({
+      mockRouter.setResult({
         text: 'r',
-        toolCalls: [{ id: 't1', name: 'notify_user', input: { text: 'real alert' } }],
+        toolCalls: [{ id: 't1', name: 'push', input: { text: 'real alert' } }],
       })
       await eventLog.append('agent.work.requested', { source: 'heartbeat', prompt: 'p2' })
       await vi.waitFor(() => {
@@ -349,7 +360,7 @@ describe('AgentWorkListener', () => {
         session: new SessionStore('test/cron'),
         preamble: () => 'cron',
       })
-      mockAgent.setShouldThrow(new Error('AI down'))
+      mockRouter.setShouldThrow(new Error('AI down'))
 
       await eventLog.append('agent.work.requested', { source: 'cron', prompt: 'p' })
       await vi.waitFor(() => {
@@ -368,7 +379,7 @@ describe('AgentWorkListener', () => {
         preamble: () => 'cron',
         buildErrorMetadata: (_req, err) => ({ jobId: 'failed-job', errorClass: err.name }),
       })
-      mockAgent.setShouldThrow(new Error('explode'))
+      mockRouter.setShouldThrow(new Error('explode'))
 
       await eventLog.append('agent.work.requested', {
         source: 'cron',
@@ -413,7 +424,7 @@ describe('AgentWorkListener', () => {
       await eventLog.append('agent.work.requested', { source: 'cron', prompt: 'after stop' })
       await new Promise((r) => setTimeout(r, 50))
 
-      expect(mockAgent.callCount()).toBe(0)
+      expect(mockRouter.callCount()).toBe(0)
       expect(eventLog.recent({ type: 'agent.work.done' })).toHaveLength(0)
     })
   })
