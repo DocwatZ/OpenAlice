@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { TrendingUp, Hash } from 'lucide-react'
 import { entitiesLive } from '../live/entities'
 import { useTrackedSelection } from '../live/tracked-selection'
@@ -10,6 +11,7 @@ import { useTrackedSelection } from '../live/tracked-selection'
  * remounts and is read by TrackedPage in the editor area.
  */
 export function TrackedSidebar() {
+  const { t } = useTranslation()
   const entities = entitiesLive.useStore((s) => s.entities)
   const loading = entitiesLive.useStore((s) => s.loading)
   const selected = useTrackedSelection((s) => s.selectedName)
@@ -26,13 +28,13 @@ export function TrackedSidebar() {
   }, [entities, selected, select])
 
   if (loading && entities.length === 0) {
-    return <div className="px-3 py-3 text-[12px] text-text-muted">Loading…</div>
+    return <div className="px-3 py-3 text-[12px] text-text-muted">{t('common.loading')}</div>
   }
 
   if (entities.length === 0) {
     return (
       <div className="px-3 py-4 text-[12px] text-text-muted/70 leading-relaxed">
-        Nothing tracked yet.
+        {t('tracked.nothingTrackedYet')}
         <div className="mt-1 text-text-muted/50">
           Agents register assets &amp; topics with the{' '}
           <code className="text-[11px]">entity_upsert</code> tool, then link to them with{' '}
@@ -63,7 +65,7 @@ export function TrackedSidebar() {
             {e.backlinkCount > 0 && (
               <span
                 className="shrink-0 text-[10px] text-text-muted/60 tabular-nums"
-                title={`${e.backlinkCount} notes link here`}
+                title={t('tracked.backlinksTooltip', { count: e.backlinkCount })}
               >
                 {e.backlinkCount}
               </span>

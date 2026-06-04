@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useTradingConfig } from '../hooks/useTradingConfig'
 import { useWorkspace } from '../tabs/store'
 import { getFocusedTab } from '../tabs/types'
@@ -13,6 +14,7 @@ import { SidebarRow } from './SidebarRow'
  * sidebar selection itself — focus and sidebar are independent.
  */
 export function PortfolioSidebar() {
+  const { t } = useTranslation()
   const { utas, loading } = useTradingConfig()
   const focused = useWorkspace((state) => getFocusedTab(state)?.spec)
   const openOrFocus = useWorkspace((state) => state.openOrFocus)
@@ -24,22 +26,22 @@ export function PortfolioSidebar() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex-1 overflow-y-auto min-h-0 py-0.5">
-        <SidebarSectionHeader>Overview</SidebarSectionHeader>
+        <SidebarSectionHeader>{t('portfolio.overview')}</SidebarSectionHeader>
         <SidebarRow
-          label="All Accounts"
+          label={t('portfolio.allAccounts')}
           active={overviewActive}
           onClick={() => openOrFocus({ kind: 'portfolio', params: {} })}
         />
 
         <SidebarSectionHeader>
-          Accounts{!loading && utas.length > 0 ? ` (${utas.length})` : ''}
+          {t('portfolio.accounts')}{!loading && utas.length > 0 ? ` (${utas.length})` : ''}
         </SidebarSectionHeader>
 
         {loading ? (
-          <p className="px-3 py-1 text-[12px] text-text-muted/60">Loading…</p>
+          <p className="px-3 py-1 text-[12px] text-text-muted/60">{t('common.loading')}</p>
         ) : utas.length === 0 ? (
           <p className="px-3 py-1 text-[12px] text-text-muted/60 leading-snug">
-            No accounts yet. Add one in Settings → Trading.
+            {t('portfolio.noAccountsYet')}
           </p>
         ) : (
           utas.map((uta) => {
@@ -56,7 +58,7 @@ export function PortfolioSidebar() {
                 }
                 trail={
                   !uta.enabled ? (
-                    <span className="text-[9px] uppercase tracking-wide text-text-muted/60">off</span>
+                    <span className="text-[9px] uppercase tracking-wide text-text-muted/60">{t('common.off')}</span>
                   ) : undefined
                 }
               />

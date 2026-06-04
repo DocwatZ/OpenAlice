@@ -12,6 +12,7 @@ import { UrlAdopter } from './tabs/UrlAdopter'
 import { useWorkspace } from './tabs/store'
 import { getFocusedTab } from './tabs/types'
 import { useLocale } from './i18n/useLocale'
+import { useTranslation } from 'react-i18next'
 
 /**
  * Activity-bar pages — only items that appear as icons in the ActivityBar.
@@ -49,6 +50,7 @@ function AppShell() {
   // Re-render the shell on a language switch so formatter-only subtrees
   // (charts, money/date labels that don't call t()) refresh too.
   useLocale()
+  const { t } = useTranslation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [secondaryOpen, setSecondaryOpen] = useState(false)
   const selectedSidebar = useWorkspace((state) => state.selectedSidebar)
@@ -155,7 +157,7 @@ function AppShell() {
             <>
               <Panel id="sidebar" defaultSize={20} minSize="200px" maxSize="500px">
                 <Sidebar
-                  title={section.title}
+                  title={t(section.titleKey)}
                   actions={section.Actions ? <section.Actions /> : undefined}
                 >
                   <section.Secondary />
@@ -199,6 +201,7 @@ interface MobileSecondaryDrawerProps {
 }
 
 function MobileSecondaryDrawer({ open, section, onClose, onBack }: MobileSecondaryDrawerProps) {
+  const { t } = useTranslation()
   return (
     <>
       <div
@@ -216,7 +219,7 @@ function MobileSecondaryDrawer({ open, section, onClose, onBack }: MobileSeconda
         `}
       >
         <Sidebar
-          title={section.title}
+          title={t(section.titleKey)}
           actions={section.Actions ? <section.Actions /> : undefined}
           leading={
             <button

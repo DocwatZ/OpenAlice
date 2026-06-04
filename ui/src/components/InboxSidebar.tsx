@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { formatRelativeTime } from '../lib/intl'
 import { inboxLive } from '../live/inbox'
 import { useInboxRead } from '../live/inbox-read'
@@ -23,6 +24,7 @@ import type { InboxEntry } from '../api/inbox'
  * inbox-read.ts doc for the rationale).
  */
 export function InboxSidebar() {
+  const { t } = useTranslation()
   const entries = inboxLive.useStore((s) => s.entries)
   const loading = inboxLive.useStore((s) => s.loading)
   const selectedId = useInboxSelection((s) => s.selectedEntryId)
@@ -68,15 +70,15 @@ export function InboxSidebar() {
   const groups = useMemo(() => groupByBucket(entries), [entries])
 
   if (loading && entries.length === 0) {
-    return <div className="px-3 py-3 text-[12px] text-text-muted">Loading…</div>
+    return <div className="px-3 py-3 text-[12px] text-text-muted">{t('common.loading')}</div>
   }
 
   if (entries.length === 0) {
     return (
       <div className="px-3 py-4 text-[12px] text-text-muted/70 leading-relaxed">
-        No inbox messages.
+        {t('inbox.noMessages')}
         <div className="mt-1 text-text-muted/50">
-          Workspaces will push status updates here.
+          {t('inbox.emptyHint')}
         </div>
       </div>
     )
@@ -87,7 +89,7 @@ export function InboxSidebar() {
       {groups.map(([bucket, items]) => (
         <div key={bucket} className="mb-1">
           <div className="px-3 mt-2 mb-1 text-[10px] font-medium text-text-muted/60 uppercase tracking-wider">
-            {bucket}
+            {t(BUCKET_KEYS[bucket])}
           </div>
           <div className="flex flex-col">
             {items.map((entry) => (
@@ -182,6 +184,13 @@ function previewFor(entry: InboxEntry): string {
 // ==================== Grouping ====================
 
 type Bucket = 'Today' | 'Yesterday' | 'This week' | 'Older'
+
+const BUCKET_KEYS = {
+  Today: 'inbox.dateToday',
+  Yesterday: 'inbox.dateYesterday',
+  'This week': 'inbox.dateThisWeek',
+  Older: 'inbox.dateOlder',
+} as const satisfies Record<Bucket, string>
 
 function groupByBucket(entries: readonly InboxEntry[]): Array<[Bucket, InboxEntry[]]> {
   const now = Date.now()

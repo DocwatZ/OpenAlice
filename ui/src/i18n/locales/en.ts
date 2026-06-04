@@ -46,6 +46,14 @@ export const en = {
       title: 'Language',
       description: 'Interface language. Takes effect immediately.',
     },
+    category: {
+      general: 'General',
+      aiProvider: 'AI Provider',
+      trading: 'Trading',
+      mcpServer: 'MCP Server',
+      marketData: 'Market Data',
+      newsSources: 'News Sources',
+    },
     agent: {
       title: 'Agent',
       description: 'Controls file-system and tool permissions for the AI. Changes apply on the next request.',
@@ -87,6 +95,56 @@ export const en = {
         securitiesTrading: 'Securities Trading',
       },
     },
+  },
+  common: {
+    loading: 'Loading…',
+    searching: 'searching…',
+    tools: 'Tools',
+    logs: 'Logs',
+    off: 'off',
+  },
+  dev: {
+    snapshots: 'Snapshots',
+  },
+  simulator: {
+    title: 'Simulator',
+  },
+  market: {
+    searchPlaceholder: 'Search assets…',
+    browseSection: 'Browse',
+    browseMarkets: 'Browse Markets',
+    searchResults: 'Search Results',
+    noMatches: 'No matches',
+    watchlist: 'Watchlist',
+    emptyWatchlistHint: 'Pin assets here from a detail page.',
+    removeFromWatchlist: 'Remove {{symbol}}',
+  },
+  portfolio: {
+    overview: 'Overview',
+    allAccounts: 'All Accounts',
+    accounts: 'Accounts',
+    noAccountsYet: 'No accounts yet. Add one in Settings → Trading.',
+  },
+  automation: {
+    flow: 'Flow',
+    heartbeat: 'Heartbeat',
+    cronJobs: 'Cron Jobs',
+    webhook: 'Webhook',
+  },
+  news: {
+    allNews: 'All News',
+  },
+  tracked: {
+    nothingTrackedYet: 'Nothing tracked yet.',
+    backlinksTooltip: '{{count}} notes link here',
+  },
+  inbox: {
+    noMessages: 'No inbox messages.',
+    emptyHint: 'Workspaces will push status updates here.',
+    dateToday: 'Today',
+    dateYesterday: 'Yesterday',
+    dateThisWeek: 'This week',
+    dateOlder: 'Older',
   },
 } as const
 

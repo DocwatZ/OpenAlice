@@ -35,6 +35,14 @@ export const zh: Resources = {
       title: '语言',
       description: '界面语言，立即生效。',
     },
+    category: {
+      general: '通用',
+      aiProvider: 'AI 提供商',
+      trading: '交易',
+      mcpServer: 'MCP 服务器',
+      marketData: '市场数据',
+      newsSources: '新闻源',
+    },
     agent: {
       title: '智能体',
       description: '控制 AI 的文件系统与工具权限。更改在下一次请求时生效。',
@@ -76,5 +84,55 @@ export const zh: Resources = {
         securitiesTrading: '证券交易',
       },
     },
+  },
+  common: {
+    loading: '加载中…',
+    searching: '搜索中…',
+    tools: '工具',
+    logs: '日志',
+    off: '关闭',
+  },
+  dev: {
+    snapshots: '快照',
+  },
+  simulator: {
+    title: '模拟器',
+  },
+  market: {
+    searchPlaceholder: '搜索资产…',
+    browseSection: '浏览',
+    browseMarkets: '浏览市场',
+    searchResults: '搜索结果',
+    noMatches: '无匹配',
+    watchlist: '自选',
+    emptyWatchlistHint: '在详情页把资产固定到这里。',
+    removeFromWatchlist: '移除 {{symbol}}',
+  },
+  portfolio: {
+    overview: '概览',
+    allAccounts: '全部账户',
+    accounts: '账户',
+    noAccountsYet: '还没有账户。在 设置 → 交易 中添加。',
+  },
+  automation: {
+    flow: '流程',
+    heartbeat: '心跳',
+    cronJobs: 'Cron 任务',
+    webhook: 'Webhook',
+  },
+  news: {
+    allNews: '全部新闻',
+  },
+  tracked: {
+    nothingTrackedYet: '还没有追踪任何东西。',
+    backlinksTooltip: '{{count}} 条笔记链接到此',
+  },
+  inbox: {
+    noMessages: '收件箱为空。',
+    emptyHint: '工作区会把状态更新推送到这里。',
+    dateToday: '今天',
+    dateYesterday: '昨天',
+    dateThisWeek: '本周',
+    dateOlder: '更早',
   },
 }

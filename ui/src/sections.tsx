@@ -33,9 +33,11 @@ import { AutomationSidebar } from './components/AutomationSidebar'
 import { NewsSidebar } from './components/NewsSidebar'
 import type { ActivitySection } from './tabs/types'
 
+type NavTitleKey = 'nav.item.chat' | 'nav.item.inbox' | 'nav.item.tracked' | 'nav.item.workspaces' | 'nav.item.tradingAsGit' | 'nav.item.settings' | 'nav.item.dev' | 'nav.item.market' | 'nav.item.portfolio' | 'nav.item.automation' | 'nav.item.news'
+
 export interface SidebarSection {
   /** Header title shown at the top of the sidebar. */
-  title: string
+  titleKey: NavTitleKey
   /** The actual navigator content. */
   Secondary: ComponentType
   /** Optional right-aligned action buttons in the sidebar header (e.g. "+ new"). */
@@ -47,47 +49,47 @@ const SECTION_BY_KEY: Record<ActivitySection, SidebarSection> = {
   // shortcut by chat-template workspaces. Channel creation is no longer
   // an Action here; that affordance moved to traditional-chat.
   chat: {
-    title: 'Chat',
+    titleKey: 'nav.item.chat',
     Secondary: ChatChannelListContainer,
   },
   inbox: {
-    title: 'Inbox',
+    titleKey: 'nav.item.inbox',
     Secondary: InboxSidebar,
   },
   tracked: {
-    title: 'Tracked',
+    titleKey: 'nav.item.tracked',
     Secondary: TrackedSidebar,
   },
   workspaces: {
-    title: 'Workspaces',
+    titleKey: 'nav.item.workspaces',
     Secondary: WorkspacesSidebar,
   },
   'trading-as-git': {
-    title: 'Trading as Git',
+    titleKey: 'nav.item.tradingAsGit',
     Secondary: PushApprovalPanel,
   },
   settings: {
-    title: 'Settings',
+    titleKey: 'nav.item.settings',
     Secondary: SettingsCategoryList,
   },
   dev: {
-    title: 'Dev',
+    titleKey: 'nav.item.dev',
     Secondary: DevCategoryList,
   },
   market: {
-    title: 'Market',
+    titleKey: 'nav.item.market',
     Secondary: MarketSidebar,
   },
   portfolio: {
-    title: 'Portfolio',
+    titleKey: 'nav.item.portfolio',
     Secondary: PortfolioSidebar,
   },
   automation: {
-    title: 'Automation',
+    titleKey: 'nav.item.automation',
     Secondary: AutomationSidebar,
   },
   news: {
-    title: 'News',
+    titleKey: 'nav.item.news',
     Secondary: NewsSidebar,
   },
 }

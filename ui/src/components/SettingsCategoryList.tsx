@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useWorkspace } from '../tabs/store'
 import { getFocusedTab, type ViewSpec } from '../tabs/types'
 import { SidebarRow } from './SidebarRow'
@@ -5,20 +6,20 @@ import { SidebarRow } from './SidebarRow'
 type SettingsCategory = Extract<ViewSpec, { kind: 'settings' }>['params']['category']
 
 interface CategoryItem {
-  label: string
+  labelKey: string
   category: SettingsCategory
 }
 
-const CATEGORIES: CategoryItem[] = [
-  { label: 'General',      category: 'general' },
-  { label: 'AI Provider',  category: 'ai-provider' },
-  { label: 'Trading',      category: 'trading' },
+const CATEGORIES = [
+  { labelKey: 'settings.category.general',     category: 'general' },
+  { labelKey: 'settings.category.aiProvider',  category: 'ai-provider' },
+  { labelKey: 'settings.category.trading',     category: 'trading' },
   // Connectors moved to its own ActivityBar Legacy entry — see
   // ConnectorsLegacySidebar.
-  { label: 'MCP Server',   category: 'mcp' },
-  { label: 'Market Data',  category: 'market-data' },
-  { label: 'News Sources', category: 'news-collector' },
-]
+  { labelKey: 'settings.category.mcpServer',   category: 'mcp' },
+  { labelKey: 'settings.category.marketData',  category: 'market-data' },
+  { labelKey: 'settings.category.newsSources', category: 'news-collector' },
+] as const
 
 /**
  * Settings sidebar — flat list of config categories. Click opens (or
@@ -26,6 +27,7 @@ const CATEGORIES: CategoryItem[] = [
  * currently-focused tab's spec, not by sidebar selection.
  */
 export function SettingsCategoryList() {
+  const { t } = useTranslation()
   const focused = useWorkspace((state) => getFocusedTab(state)?.spec)
   const openOrFocus = useWorkspace((state) => state.openOrFocus)
 
@@ -37,7 +39,7 @@ export function SettingsCategoryList() {
         return (
           <SidebarRow
             key={item.category}
-            label={item.label}
+            label={t(item.labelKey)}
             active={active}
             onClick={() => openOrFocus({ kind: 'settings', params: { category: item.category } })}
           />

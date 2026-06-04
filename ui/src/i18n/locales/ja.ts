@@ -35,6 +35,14 @@ export const ja: Resources = {
       title: '言語',
       description: 'インターフェースの言語。すぐに反映されます。',
     },
+    category: {
+      general: '一般',
+      aiProvider: 'AI プロバイダー',
+      trading: '取引',
+      mcpServer: 'MCP サーバー',
+      marketData: 'マーケットデータ',
+      newsSources: 'ニュースソース',
+    },
     agent: {
       title: 'エージェント',
       description: 'AI のファイルシステムとツールの権限を制御します。変更は次のリクエストで反映されます。',
@@ -76,5 +84,55 @@ export const ja: Resources = {
         securitiesTrading: '証券取引',
       },
     },
+  },
+  common: {
+    loading: '読み込み中…',
+    searching: '検索中…',
+    tools: 'ツール',
+    logs: 'ログ',
+    off: 'オフ',
+  },
+  dev: {
+    snapshots: 'スナップショット',
+  },
+  simulator: {
+    title: 'シミュレーター',
+  },
+  market: {
+    searchPlaceholder: '銘柄を検索…',
+    browseSection: '閲覧',
+    browseMarkets: 'マーケットを見る',
+    searchResults: '検索結果',
+    noMatches: '一致なし',
+    watchlist: 'ウォッチリスト',
+    emptyWatchlistHint: '詳細ページから銘柄をここにピン留めできます。',
+    removeFromWatchlist: '{{symbol}} を削除',
+  },
+  portfolio: {
+    overview: '概要',
+    allAccounts: '全アカウント',
+    accounts: 'アカウント',
+    noAccountsYet: 'アカウントがまだありません。設定 → 取引 で追加してください。',
+  },
+  automation: {
+    flow: 'フロー',
+    heartbeat: 'ハートビート',
+    cronJobs: 'Cron ジョブ',
+    webhook: 'Webhook',
+  },
+  news: {
+    allNews: 'すべてのニュース',
+  },
+  tracked: {
+    nothingTrackedYet: 'まだ何もトラッキングしていません。',
+    backlinksTooltip: '{{count}} 件のメモがここにリンク',
+  },
+  inbox: {
+    noMessages: '受信トレイにメッセージがありません。',
+    emptyHint: 'ワークスペースがステータス更新をここに送ります。',
+    dateToday: '今日',
+    dateYesterday: '昨日',
+    dateThisWeek: '今週',
+    dateOlder: 'それ以前',
   },
 }

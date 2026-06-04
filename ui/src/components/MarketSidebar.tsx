@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { marketApi, type SearchResult, type AssetClass } from '../api/market'
 import { useWorkspace } from '../tabs/store'
 import { useWatchlist } from '../tabs/watchlist-store'
@@ -30,6 +31,7 @@ function resultKey(r: SearchResult): string {
  * Search results are debounced 300ms.
  */
 export function MarketSidebar() {
+  const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -81,16 +83,16 @@ export function MarketSidebar() {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search assets…"
+          placeholder={t('market.searchPlaceholder')}
           className="w-full px-2.5 py-1.5 bg-bg text-text border border-border rounded-md text-[13px] outline-none focus:border-accent"
         />
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
         {/* Browse */}
-        <SidebarSectionHeader>Browse</SidebarSectionHeader>
+        <SidebarSectionHeader>{t('market.browseSection')}</SidebarSectionHeader>
         <SidebarRow
-          label="Browse Markets"
+          label={t('market.browseMarkets')}
           active={isFocused('market-list')}
           onClick={() => openOrFocus({ kind: 'market-list', params: {} })}
         />
@@ -99,10 +101,10 @@ export function MarketSidebar() {
         {query.trim() && (
           <>
             <SidebarSectionHeader>
-              Search Results{loading ? ' (searching…)' : results.length ? ` (${results.length})` : ''}
+              {t('market.searchResults')}{loading ? ` (${t('common.searching')})` : results.length ? ` (${results.length})` : ''}
             </SidebarSectionHeader>
             {!loading && results.length === 0 && (
-              <p className="px-3 py-1 text-[12px] text-text-muted/60">No matches</p>
+              <p className="px-3 py-1 text-[12px] text-text-muted/60">{t('market.noMatches')}</p>
             )}
             {results.map((r) => {
               const sym = resultSymbol(r)
@@ -125,10 +127,10 @@ export function MarketSidebar() {
         )}
 
         {/* Watchlist */}
-        <SidebarSectionHeader>Watchlist{watchlist.length ? ` (${watchlist.length})` : ''}</SidebarSectionHeader>
+        <SidebarSectionHeader>{t('market.watchlist')}{watchlist.length ? ` (${watchlist.length})` : ''}</SidebarSectionHeader>
         {watchlist.length === 0 ? (
           <p className="px-3 py-1 text-[12px] text-text-muted/60">
-            Pin assets here from a detail page.
+            {t('market.emptyWatchlistHint')}
           </p>
         ) : (
           watchlist.map((entry) => (
@@ -152,7 +154,7 @@ export function MarketSidebar() {
                       removeFromWatchlist(entry.assetClass, entry.symbol)
                     }}
                     className="w-4 h-4 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 text-text-muted/60 hover:text-text hover:bg-bg-tertiary"
-                    aria-label={`Remove ${entry.symbol}`}
+                    aria-label={t('market.removeFromWatchlist', { symbol: entry.symbol })}
                   >
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                       <path d="M18 6L6 18M6 6l12 12" />
