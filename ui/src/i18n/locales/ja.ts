@@ -2,6 +2,29 @@ import type { Resources } from './en'
 
 /** 日本語. Typed as `Resources` → must match en's key structure exactly. */
 export const ja: Resources = {
+  nav: {
+    item: {
+      inbox: '受信トレイ',
+      tracked: 'トラッキング',
+      chat: 'チャット',
+      workspaces: 'ワークスペース',
+      market: 'マーケット',
+      news: 'ニュース',
+      tradingAsGit: 'Trading as Git',
+      portfolio: 'ポートフォリオ',
+      automation: '自動化',
+      settings: '設定',
+      dev: '開発',
+    },
+    section: {
+      beta: 'ベータ',
+      system: 'システム',
+    },
+    betaDescription:
+      '動作はしますが、まだ安定していません。Trading-as-Git とポートフォリオは複数ブローカーを統合した状態を表示しますが、その基盤となる抽象はまだ固まっていません——試用は可能ですが、スキーマや UX の安定性に依存しないでください。オートメーションは動作しますが、現在の Harness アーキテクチャではトリガーチェーンが閉じていないため、Harness のスケジューリングが実装されるまでエンドツーエンドで発火できません。ブローカー接続の設定は 設定 → 取引 にあります。',
+    unread: '未読 {{count}} 件',
+    about: '{{label}}について',
+  },
   settings: {
     title: '設定',
     tab: {
@@ -11,6 +34,47 @@ export const ja: Resources = {
     language: {
       title: '言語',
       description: 'インターフェースの言語。すぐに反映されます。',
+    },
+    agent: {
+      title: 'エージェント',
+      description: 'AI のファイルシステムとツールの権限を制御します。変更は次のリクエストで反映されます。',
+      evolutionMode: '進化モード',
+      evolutionOn: 'プロジェクト全体へのアクセス——AI はソースコードを変更できます',
+      evolutionOff: 'サンドボックスモード——AI は data/brain/ のみ編集できます',
+    },
+    persona: {
+      title: 'ペルソナ',
+      description: 'Alice の性格と振る舞いを定義するシステムプロンプト。変更は次回のサーバー再起動時に反映されます。',
+      loadError: 'ペルソナの読み込みに失敗しました',
+      saveError: '保存に失敗しました',
+      loading: '読み込み中…',
+      saving: '保存中…',
+      save: '保存',
+      saved: '保存しました',
+      unsaved: '未保存の変更があります',
+    },
+    compaction: {
+      title: '圧縮',
+      description: 'コンテキストウィンドウの管理。会話のサイズが 最大コンテキスト から 最大出力 トークンを引いた値に近づくと、古いメッセージが自動的に要約され、スペースが確保されます。',
+      maxContextTokens: '最大コンテキストトークン',
+      maxOutputTokens: '最大出力トークン',
+    },
+    tools: {
+      summary: '{{groups}} グループ {{tools}} ツール——変更は次回の AI リクエストで反映されます',
+      emptyTitle: '登録されたツールはありません。',
+      emptyDescription: 'エンジンが起動するとツールがここに表示されます。',
+      group: {
+        thinking: 'シンキングキット',
+        cron: 'Cron スケジューラー',
+        equity: '株式データ',
+        cryptoData: '暗号資産データ',
+        currencyData: '為替データ',
+        news: 'ニュース',
+        newsArchive: 'ニュースアーカイブ',
+        analysis: '分析キット',
+        cryptoTrading: '暗号資産取引',
+        securitiesTrading: '証券取引',
+      },
     },
   },
 }

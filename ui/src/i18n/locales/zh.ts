@@ -2,6 +2,29 @@ import type { Resources } from './en'
 
 /** 简体中文. Typed as `Resources` → must match en's key structure exactly. */
 export const zh: Resources = {
+  nav: {
+    item: {
+      inbox: '收件箱',
+      tracked: '追踪',
+      chat: '对话',
+      workspaces: '工作区',
+      market: '市场',
+      news: '新闻',
+      tradingAsGit: '交易即 Git',
+      portfolio: '投资组合',
+      automation: '自动化',
+      settings: '设置',
+      dev: '开发',
+    },
+    section: {
+      beta: '测试版',
+      system: '系统',
+    },
+    betaDescription:
+      '功能可用，但尚不稳定。Trading-as-Git 与投资组合展示的是跨券商的统一状态，其底层抽象仍在定型中——可以试用，但不要依赖其 schema 或 UX 的稳定性。自动化能运行，但在当前 Harness 架构下其触发链尚未闭合，因此在 Harness 调度落地前无法端到端触发。券商连接设置位于 设置 → 交易。',
+    unread: '{{count}} 条未读',
+    about: '关于{{label}}',
+  },
   settings: {
     title: '设置',
     tab: {
@@ -11,6 +34,47 @@ export const zh: Resources = {
     language: {
       title: '语言',
       description: '界面语言，立即生效。',
+    },
+    agent: {
+      title: '智能体',
+      description: '控制 AI 的文件系统与工具权限。更改在下一次请求时生效。',
+      evolutionMode: '进化模式',
+      evolutionOn: '完整项目访问权——AI 可修改源代码',
+      evolutionOff: '沙盒模式——AI 只能编辑 data/brain/',
+    },
+    persona: {
+      title: '人设',
+      description: '定义 Alice 个性与行为的系统提示词。更改在下次服务器重启后生效。',
+      loadError: '加载人设失败',
+      saveError: '保存失败',
+      loading: '加载中…',
+      saving: '保存中…',
+      save: '保存',
+      saved: '已保存',
+      unsaved: '有未保存的更改',
+    },
+    compaction: {
+      title: '压缩',
+      description: '上下文窗口管理。当对话长度接近 最大上下文 减 最大输出 tokens 时，较早的消息会被自动摘要以释放空间。',
+      maxContextTokens: '最大上下文 Tokens',
+      maxOutputTokens: '最大输出 Tokens',
+    },
+    tools: {
+      summary: '{{groups}} 个分组共 {{tools}} 个工具——更改在下次 AI 请求时生效',
+      emptyTitle: '尚未注册任何工具。',
+      emptyDescription: '引擎启动后工具会显示在这里。',
+      group: {
+        thinking: '思考工具集',
+        cron: 'Cron 调度器',
+        equity: '股票数据',
+        cryptoData: '加密货币数据',
+        currencyData: '货币数据',
+        news: '新闻',
+        newsArchive: '新闻归档',
+        analysis: '分析工具集',
+        cryptoTrading: '加密货币交易',
+        securitiesTrading: '证券交易',
+      },
     },
   },
 }

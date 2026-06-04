@@ -5,6 +5,7 @@ import { useWorkspace } from '../tabs/store'
 import type { ActivitySection, ViewSpec } from '../tabs/types'
 import { useUnreadInboxCount } from '../live/inbox-read'
 import { useActivityBarCollapse } from '../live/activity-bar-collapse'
+import { useTranslation } from 'react-i18next'
 
 /**
  * Map ActivityBar page enum (visual layout grouping) to the ActivitySection
@@ -40,9 +41,14 @@ interface ActivityBarProps {
 
 // ==================== Nav item definitions ====================
 
+type NavItemKey =
+  | 'nav.item.inbox' | 'nav.item.tracked' | 'nav.item.chat' | 'nav.item.workspaces'
+  | 'nav.item.market' | 'nav.item.news' | 'nav.item.tradingAsGit'
+  | 'nav.item.portfolio' | 'nav.item.automation' | 'nav.item.settings' | 'nav.item.dev'
+
 interface NavLeaf {
   page: Page
-  label: string
+  labelKey: NavItemKey
   icon: LucideIcon
   /**
    * What tab opens when this ActivityBar item is clicked.
@@ -61,7 +67,12 @@ interface NavLeaf {
 }
 
 interface NavSection {
+  /** Stable identity — the collapse-state storage key and the labeled-vs-
+   *  pinned check. '' = the unlabeled top section. Display comes from
+   *  `labelKey`, not this. */
   sectionLabel: string
+  /** i18n key for the displayed section header (labeled sections only). */
+  labelKey?: 'nav.section.beta' | 'nav.section.system'
   items: NavLeaf[]
   /** When true, the section starts collapsed on a user's first visit
    *  (or after they clear localStorage). User-toggled collapse state
@@ -69,11 +80,10 @@ interface NavSection {
    *  default. Useful for "this section exists but isn't the recommended
    *  path" framing (Legacy). */
   defaultCollapsed?: boolean
-  /** Optional muted-text paragraph rendered between the section header
-   *  and its items (visible only when the section is expanded). Use
-   *  this to communicate lifecycle stage — e.g. Beta's "stuff here
-   *  works but expect churn" hint. Plain text; keep short. */
-  description?: string
+  /** i18n key for the muted-text paragraph rendered between the section
+   *  header and its items (visible only when expanded) — e.g. Beta's
+   *  lifecycle hint. */
+  descriptionKey?: 'nav.betaDescription'
 }
 
 const NAV_SECTIONS: NavSection[] = [
@@ -91,12 +101,12 @@ const NAV_SECTIONS: NavSection[] = [
   {
     sectionLabel: '',
     items: [
-      { page: 'inbox',      label: 'Inbox',      icon: Inbox, defaultTab: { kind: 'inbox', params: {} } },
-      { page: 'tracked',    label: 'Tracked',    icon: Telescope, defaultTab: { kind: 'tracked', params: {} } },
-      { page: 'chat',       label: 'Chat',       icon: MessageSquare },
-      { page: 'workspaces', label: 'Workspaces', icon: TerminalSquare },
-      { page: 'market',     label: 'Market',     icon: BarChart3 },
-      { page: 'news',       label: 'News',       icon: Newspaper, defaultTab: { kind: 'news', params: {} } },
+      { page: 'inbox',      labelKey: 'nav.item.inbox',      icon: Inbox, defaultTab: { kind: 'inbox', params: {} } },
+      { page: 'tracked',    labelKey: 'nav.item.tracked',    icon: Telescope, defaultTab: { kind: 'tracked', params: {} } },
+      { page: 'chat',       labelKey: 'nav.item.chat',       icon: MessageSquare },
+      { page: 'workspaces', labelKey: 'nav.item.workspaces', icon: TerminalSquare },
+      { page: 'market',     labelKey: 'nav.item.market',     icon: BarChart3 },
+      { page: 'news',       labelKey: 'nav.item.news',       icon: Newspaper, defaultTab: { kind: 'news', params: {} } },
     ],
   },
   // Beta — functional but not yet dependable. Two distinct reasons
@@ -113,18 +123,20 @@ const NAV_SECTIONS: NavSection[] = [
   // it's a config surface, not a state/ops one.
   {
     sectionLabel: 'Beta',
-    description: 'Functional but not yet dependable. Trading-as-Git and Portfolio surface cross-broker unified state whose underlying abstraction is still being settled — try them, but don\'t depend on schema or UX as stable yet. Automation runs, but its trigger chain isn\'t closed in the current Harness architecture, so it can\'t fire end-to-end until Harness scheduling lands. Broker connection setup lives in Settings → Trading.',
+    labelKey: 'nav.section.beta',
+    descriptionKey: 'nav.betaDescription',
     items: [
-      { page: 'trading-as-git', label: 'Trading as Git', icon: GitBranch },
-      { page: 'portfolio',      label: 'Portfolio',      icon: LineChart, defaultTab: { kind: 'portfolio', params: {} } },
-      { page: 'automation',     label: 'Automation',     icon: Zap, defaultTab: { kind: 'automation', params: { section: 'flow' } } },
+      { page: 'trading-as-git', labelKey: 'nav.item.tradingAsGit', icon: GitBranch },
+      { page: 'portfolio',      labelKey: 'nav.item.portfolio',    icon: LineChart, defaultTab: { kind: 'portfolio', params: {} } },
+      { page: 'automation',     labelKey: 'nav.item.automation',   icon: Zap, defaultTab: { kind: 'automation', params: { section: 'flow' } } },
     ],
   },
   {
     sectionLabel: 'System',
+    labelKey: 'nav.section.system',
     items: [
-      { page: 'settings', label: 'Settings', icon: Settings },
-      { page: 'dev',      label: 'Dev',      icon: Code2 },
+      { page: 'settings', labelKey: 'nav.item.settings', icon: Settings },
+      { page: 'dev',      labelKey: 'nav.item.dev',      icon: Code2 },
     ],
   },
 ]
@@ -145,6 +157,7 @@ const NAV_SECTIONS: NavSection[] = [
  * communicate that. Mostly-icon view would hide the differentiation.
  */
 export function ActivityBar({ open, onClose, onItemActivated }: ActivityBarProps) {
+  const { t } = useTranslation()
   const selectedSidebar = useWorkspace((state) => state.selectedSidebar)
   const setSidebar = useWorkspace((state) => state.setSidebar)
   const openOrFocus = useWorkspace((state) => state.openOrFocus)
@@ -202,8 +215,8 @@ export function ActivityBar({ open, onClose, onItemActivated }: ActivityBarProps
               <div key={si} className={si > 0 ? 'mt-4' : ''}>
                 {labeled && (
                   <SectionHeader
-                    label={section.sectionLabel}
-                    description={section.description}
+                    label={section.labelKey ? t(section.labelKey) : section.sectionLabel}
+                    description={section.descriptionKey ? t(section.descriptionKey) : undefined}
                     isCollapsed={isCollapsed}
                     onToggleCollapse={() => setCollapsed(
                       section.sectionLabel,
@@ -247,7 +260,7 @@ export function ActivityBar({ open, onClose, onItemActivated }: ActivityBarProps
                           key={item.page}
                           type="button"
                           onClick={handleClick}
-                          title={item.label}
+                          title={t(item.labelKey)}
                           className={`relative flex items-center gap-3 px-3 py-1.5 rounded-md text-[13px] transition-colors text-left ${
                             isActive
                               ? 'bg-bg-tertiary text-text'
@@ -264,10 +277,10 @@ export function ActivityBar({ open, onClose, onItemActivated }: ActivityBarProps
                           <span className="relative flex items-center justify-center w-5 h-5 shrink-0">
                             <Icon size={16} strokeWidth={1.75} />
                           </span>
-                          <span className="flex-1 truncate">{item.label}</span>
+                          <span className="flex-1 truncate">{t(item.labelKey)}</span>
                           {item.page === 'inbox' && unreadInbox > 0 && (
                             <span
-                              aria-label={`${unreadInbox} unread`}
+                              aria-label={t('nav.unread', { count: unreadInbox })}
                               className="shrink-0 min-w-[18px] h-[18px] px-1.5 rounded-full bg-red text-[10px] font-semibold text-white tabular-nums flex items-center justify-center"
                             >
                               {unreadInbox > 99 ? '99+' : unreadInbox}
@@ -319,6 +332,7 @@ function SectionHeader({
   controlsId: string
   showItems: boolean
 }) {
+  const { t } = useTranslation()
   const [hintOpen, setHintOpen] = useState(false)
   return (
     <>
@@ -347,7 +361,7 @@ function SectionHeader({
             className={`flex items-center justify-center p-0.5 transition-colors ${
               hintOpen ? 'text-text-muted' : 'text-text-muted/50 hover:text-text-muted'
             }`}
-            aria-label={`About ${label}`}
+            aria-label={t('nav.about', { label })}
             aria-expanded={hintOpen}
           >
             <Info size={11} strokeWidth={2.25} aria-hidden />

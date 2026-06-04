@@ -41,6 +41,7 @@ function LanguageSection() {
 // ==================== Settings Section ====================
 
 function SettingsSection() {
+  const { t } = useTranslation()
   const [config, setConfig] = useState<AppConfig | null>(null)
 
   useEffect(() => {
@@ -56,16 +57,16 @@ function SettingsSection() {
         <LanguageSection />
 
         {/* Agent */}
-        <ConfigSection title="Agent" description="Controls file-system and tool permissions for the AI. Changes apply on the next request.">
+        <ConfigSection title={t('settings.agent.title')} description={t('settings.agent.description')}>
           <div className="flex items-center justify-between gap-4 py-1">
             <div className="flex-1">
               <span className="text-sm font-medium text-text">
-                Evolution Mode
+                {t('settings.agent.evolutionMode')}
               </span>
               <p className="text-[12px] text-text-muted mt-0.5 leading-relaxed">
                 {config.agent?.evolutionMode
-                  ? 'Full project access — AI can modify source code'
-                  : 'Sandbox mode — AI can only edit data/brain/'}
+                  ? t('settings.agent.evolutionOn')
+                  : t('settings.agent.evolutionOff')}
               </p>
             </div>
             <Toggle
@@ -83,12 +84,12 @@ function SettingsSection() {
         </ConfigSection>
 
         {/* Persona */}
-        <ConfigSection title="Persona" description="The system prompt that defines Alice's personality and behavior. Changes take effect on next server restart.">
+        <ConfigSection title={t('settings.persona.title')} description={t('settings.persona.description')}>
           <PersonaEditor />
         </ConfigSection>
 
         {/* Compaction */}
-        <ConfigSection title="Compaction" description="Context window management. When conversation size approaches Max Context minus Max Output tokens, older messages are automatically summarized to free up space.">
+        <ConfigSection title={t('settings.compaction.title')} description={t('settings.compaction.description')}>
           <CompactionForm config={config} />
         </ConfigSection>
       </div>
@@ -99,6 +100,7 @@ function SettingsSection() {
 // ==================== Compaction Form ====================
 
 function CompactionForm({ config }: { config: AppConfig }) {
+  const { t } = useTranslation()
   const [ctx, setCtx] = useState(String(config.compaction?.maxContextTokens || ''))
   const [out, setOut] = useState(String(config.compaction?.maxOutputTokens || ''))
 
@@ -115,10 +117,10 @@ function CompactionForm({ config }: { config: AppConfig }) {
 
   return (
     <>
-      <Field label="Max Context Tokens">
+      <Field label={t('settings.compaction.maxContextTokens')}>
         <input className={inputClass} type="number" step={1000} value={ctx} onChange={(e) => setCtx(e.target.value)} />
       </Field>
-      <Field label="Max Output Tokens">
+      <Field label={t('settings.compaction.maxOutputTokens')}>
         <input className={inputClass} type="number" step={1000} value={out} onChange={(e) => setOut(e.target.value)} />
       </Field>
       <SaveIndicator status={status} onRetry={retry} />
@@ -129,6 +131,7 @@ function CompactionForm({ config }: { config: AppConfig }) {
 // ==================== Persona Editor ====================
 
 function PersonaEditor() {
+  const { t } = useTranslation()
   const [content, setContent] = useState('')
   const [filePath, setFilePath] = useState('')
   const [loading, setLoading] = useState(true)
@@ -143,7 +146,7 @@ function PersonaEditor() {
         setContent(content)
         setFilePath(path)
       })
-      .catch(() => setError('Failed to load persona'))
+      .catch(() => setError(t('settings.persona.loadError')))
       .finally(() => setLoading(false))
   }, [])
 
@@ -157,13 +160,13 @@ function PersonaEditor() {
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch {
-      setError('Failed to save')
+      setError(t('settings.persona.saveError'))
     } finally {
       setSaving(false)
     }
   }
 
-  if (loading) return <div className="text-sm text-text-muted">Loading...</div>
+  if (loading) return <div className="text-sm text-text-muted">{t('settings.persona.loading')}</div>
 
   return (
     <>
@@ -178,12 +181,12 @@ function PersonaEditor() {
           disabled={saving || !dirty}
           className="btn-primary-sm"
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? t('settings.persona.saving') : t('settings.persona.save')}
         </button>
         {saved && (
           <span className="inline-flex items-center gap-1.5 text-[11px]">
             <span className="w-1.5 h-1.5 rounded-full bg-green" />
-            <span className="text-text-muted">Saved</span>
+            <span className="text-text-muted">{t('settings.persona.saved')}</span>
           </span>
         )}
         {error && (
@@ -193,7 +196,7 @@ function PersonaEditor() {
           </span>
         )}
         {dirty && !saved && !error && (
-          <span className="text-[11px] text-text-muted">Unsaved changes</span>
+          <span className="text-[11px] text-text-muted">{t('settings.persona.unsaved')}</span>
         )}
       </div>
       {filePath && <p className="text-[11px] text-text-muted mt-1">{filePath}</p>}
@@ -203,26 +206,28 @@ function PersonaEditor() {
 
 // ==================== Tools Section ====================
 
-const GROUP_LABELS: Record<string, string> = {
-  thinking: 'Thinking Kit',
-  cron: 'Cron Scheduler',
-  equity: 'Equity Data',
-  'crypto-data': 'Crypto Data',
-  'currency-data': 'Currency Data',
-  news: 'News',
-  'news-archive': 'News Archive',
-  analysis: 'Analysis Kit',
-  'crypto-trading': 'Crypto Trading',
-  'securities-trading': 'Securities Trading',
-}
-
 interface ToolGroup {
   key: string
-  label: string
   tools: ToolInfo[]
 }
 
 function ToolsSection() {
+  const { t } = useTranslation()
+  const groupLabel = (key: string): string => {
+    switch (key) {
+      case 'thinking': return t('settings.tools.group.thinking')
+      case 'cron': return t('settings.tools.group.cron')
+      case 'equity': return t('settings.tools.group.equity')
+      case 'crypto-data': return t('settings.tools.group.cryptoData')
+      case 'currency-data': return t('settings.tools.group.currencyData')
+      case 'news': return t('settings.tools.group.news')
+      case 'news-archive': return t('settings.tools.group.newsArchive')
+      case 'analysis': return t('settings.tools.group.analysis')
+      case 'crypto-trading': return t('settings.tools.group.cryptoTrading')
+      case 'securities-trading': return t('settings.tools.group.securitiesTrading')
+      default: return key
+    }
+  }
   const [inventory, setInventory] = useState<ToolInfo[]>([])
   const [disabled, setDisabled] = useState<Set<string>>(new Set())
   const [loaded, setLoaded] = useState(false)
@@ -238,13 +243,12 @@ function ToolsSection() {
 
   const groups = useMemo<ToolGroup[]>(() => {
     const map = new Map<string, ToolInfo[]>()
-    for (const t of inventory) {
-      if (!map.has(t.group)) map.set(t.group, [])
-      map.get(t.group)!.push(t)
+    for (const tool of inventory) {
+      if (!map.has(tool.group)) map.set(tool.group, [])
+      map.get(tool.group)!.push(tool)
     }
     return Array.from(map.entries()).map(([key, tools]) => ({
       key,
-      label: GROUP_LABELS[key] ?? key,
       tools: tools.sort((a, b) => a.name.localeCompare(b.name)),
     }))
   }, [inventory])
@@ -294,12 +298,12 @@ function ToolsSection() {
       {!loaded ? (
         <PageLoading />
       ) : groups.length === 0 ? (
-        <EmptyState title="No tools registered." description="Tools will appear here when the engine starts." />
+        <EmptyState title={t('settings.tools.emptyTitle')} description={t('settings.tools.emptyDescription')} />
       ) : (
         <div className="max-w-[880px] mx-auto">
           <div className="flex items-center justify-between mb-4">
             <p className="text-[13px] text-text-muted">
-              {inventory.length} tools in {groups.length} groups — changes apply on next AI request
+              {t('settings.tools.summary', { tools: inventory.length, groups: groups.length })}
             </p>
             <SaveIndicator status={status} onRetry={retry} />
           </div>
@@ -308,6 +312,7 @@ function ToolsSection() {
               <ToolGroupCard
                 key={g.key}
                 group={g}
+                label={groupLabel(g.key)}
                 disabled={disabled}
                 expanded={expanded.has(g.key)}
                 onToggleExpanded={() => toggleExpanded(g.key)}
@@ -326,6 +331,7 @@ function ToolsSection() {
 
 interface ToolGroupCardProps {
   group: ToolGroup
+  label: string
   disabled: Set<string>
   expanded: boolean
   onToggleExpanded: () => void
@@ -335,6 +341,7 @@ interface ToolGroupCardProps {
 
 function ToolGroupCard({
   group,
+  label,
   disabled,
   expanded,
   onToggleExpanded,
@@ -359,7 +366,7 @@ function ToolGroupCard({
           >
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          <span className="text-sm font-medium text-text truncate">{group.label}</span>
+          <span className="text-sm font-medium text-text truncate">{label}</span>
           <span className="text-[11px] text-text-muted shrink-0">
             {enabledCount}/{group.tools.length}
           </span>
