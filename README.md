@@ -48,10 +48,9 @@ Automation has two layers in OpenAlice. They're worth separating because each ev
 **Scheduling — *what* fires an AI call.** A typed append-only event log + cron engine that emits events on a schedule. Stable, reusable across both old and new execution models.
 
 - **Cron scheduling** — cron expressions, intervals, or one-shot timestamps
-- **Heartbeat** — a periodic timer with active-hours filtering and a dedup window
 - **Webhooks** — inbound event triggers from external systems (planned)
 
-**Execution — *how* the trigger lands.** This layer is being rebuilt. The scheduling above is solid and the AI run itself works — a fired event drives an AI call whose reply lands in the Inbox. What's still in flight is the *last mile*: wiring a scheduled trigger into a workspace-resident execution (a one-shot task inside a Workspace, or continued dialog on a Workspace's persistent Session) depends on the Workspace scheduler landing. Until then, Automation runs but its end-to-end delivery is intentionally minimal. The scheduling layer is shared either way, so this rebuild doesn't touch *what* fires — only *where* it ultimately runs.
+**Execution — *how* the trigger lands.** A fired schedule runs a **headless Workspace** — the same Workspace substrate, spawned non-interactively against the agent and prompt the job names. The agent does the work and reports back through the Inbox, and the run shows up live in the Runs tab. This is the whole execution model now: one substrate, the Workspace, whether a human opened it or a schedule did. (The earlier in-process AI loop that did this is gone.)
 
 ### Interface
 
@@ -62,7 +61,7 @@ Automation has two layers in OpenAlice. They're worth separating because each ev
 
 ### And More!
 
-- **Multi-provider AI** — Claude (Agent SDK with OAuth or API key) or Vercel AI SDK (Anthropic, OpenAI, Google), switchable at runtime
+- **Multi-provider AI** — the model runs in the native agent CLI; bring any provider via the credential vault (Anthropic, OpenAI, Google, GLM, MiniMax, Kimi, DeepSeek, …) or your CLI's own subscription login
 - **Evolution mode** — permission escalation that gives Alice full project access including Bash, enabling self-modification
 
 
@@ -85,10 +84,9 @@ graph TB
 
   subgraph Alice["Alice process — agent runtime + research"]
     subgraph Core["Core — orchestration"]
-      GR[GenerateRouter<br/>provider routing]
       TC[ToolCenter<br/>+ Workspace ToolCenter]
       IS[InboxStore]
-      AW[AgentWork<br/>cron / heartbeat runs]
+      CV[Credential vault<br/>injected into workspaces]
     end
     subgraph AliceDomain["Domain — Alice-side"]
       MD[Market Data]
@@ -106,12 +104,10 @@ graph TB
   end
 
   subgraph Sched["Scheduling — what fires"]
-    CRON[Cron / Heartbeat / Webhook]
+    CRON[Cron / Webhook]
   end
 
-  CRON --> AW
-  AW --> GR
-  AW -.delivers.-> IS
+  CRON -.spawns headless run.-> Workspace
 
   WEB --> Workspace
   WEB --> INB
@@ -157,12 +153,13 @@ non-trivial AI work. Wired to OpenAlice via two MCP servers in
 (workspace-scoped tools like `inbox_push`, with the wsId carried in the
 URL path so the agent never traffics its own identity).
 
-**Core (Alice)** — GenerateRouter resolves AI calls to the active
-provider. ToolCenter is the shared registry for global tools;
-WorkspaceToolCenter holds per-workspace tool factories. AgentWork
-drives scheduled (cron / heartbeat) AI runs through the router.
-InboxStore is an append-only JSONL behind the Inbox tab — the single
-push surface back to the user.
+**Core (Alice)** — ToolCenter is the shared registry for global tools;
+WorkspaceToolCenter holds per-workspace tool factories. The central
+credential vault (api-key credentials, injected into workspaces by
+template) lives here too. InboxStore is an append-only JSONL behind the
+Inbox tab — the single push surface back to the user. There is no
+in-process model loop: the model runs inside the native workspace CLI,
+and scheduled runs spawn a headless Workspace.
 
 **Alice-side Domain** — Market Data, Analysis, and News. Each module is
 exposed to AI through tool registrations and never touches broker code.
@@ -181,14 +178,12 @@ through Alice's BFF, so config updates don't require restarting Alice).
 Same module is used by `pnpm dev` (orchestrator with Vite) and the
 Docker entrypoint (with `tini` as PID 1).
 
-**Scheduling** — Cron, the heartbeat timer, and webhook ingest fire
-events on a schedule. *What* the event drives is the execution layer:
-today a fired event runs through AgentWork, which calls the active
-provider via GenerateRouter and delivers the reply to the Inbox (dotted
-line). The direction we're moving in is workspace-resident execution,
-where a scheduled event either fires a one-shot task inside a Workspace
-or drives continued dialog on a persistent Session — that last mile is
-what's being rebuilt.
+**Scheduling** — The cron engine (and webhook ingest) fire events on a
+schedule. A fired cron job runs a **headless Workspace**: it spawns the
+job's named agent non-interactively against the prompt, the agent does
+the work and reports back through the Inbox (dotted line), and the run is
+visible in the Runs tab. Execution is workspace-resident — one substrate,
+whether a human or a schedule opened the Workspace.
 
 ## Key Concepts
 
@@ -207,15 +202,15 @@ agent runtime that drives trading decisions.
 
 **Guard** — A pre-execution safety check that runs inside a UTA before orders reach the broker. Guards enforce limits (max position size, cooldown between trades, symbol whitelist) and are configured per-account. Think of it as ESLint for trading — automated rules that catch problems before they go live.
 
-**Heartbeat** — A scheduling pattern: a recurring timer with an active-hours filter. The pattern is general; its delivery is being rebuilt alongside the rest of Automation, so a heartbeat tick currently runs its AI check without a user-facing push until the Workspace scheduler lands. The same scheduling primitive will then wire into workspace executions too.
+**Scheduled run** — A cron job (cron expression / interval / one-shot) that, when it fires, spawns a **headless Workspace**: the job names an agent + a prompt, the agent runs non-interactively and reports back through the Inbox. Same Workspace substrate as interactive work — there's no separate autonomous-execution path.
 
-**AI Provider** — The AI backend that powers Alice. Claude (via Agent SDK, supports OAuth login or API key) or Vercel AI SDK (Anthropic, OpenAI, Google). Switchable at runtime — no restart needed.
+**AI Provider** — Alice runs no model in-process; the model loop lives inside the native workspace CLI (Claude Code / Codex / opencode / Pi). What Alice keeps is a **credential vault**: api-key credentials, each declaring which wire shapes it can speak (Anthropic Messages / OpenAI Chat Completions / OpenAI Responses), injected into workspaces. Subscription logins (Claude Pro/Max, ChatGPT) live in the CLI's own login, not in Alice.
 
 **Workspace** — A directory + git repo + persistent terminal session running a native agent CLI (`claude`, `codex`, or `shell`) of your choice. OpenAlice plumbs its MCP servers into the workspace via `.mcp.json`, so the agent inside sees the workspace's local files plus OpenAlice's full tool surface (trading, market data, news, analysis). Workspaces live under `~/.openalice/workspaces/<wsId>/` — each is its own self-contained scratch directory the agent can read, write, and `git commit` inside. This is the recommended substrate for any non-trivial AI work: native prompt cache, native CLI rendering, no protocol shim between you and the model. Capability extensions (browser automation, third-party CLIs, custom scrapers) ship as new workspace **templates** rather than `src/` dependencies, keeping the main repo small.
 
 **Templates & satellite repos** — A workspace template is a bootstrap script + initial file set that materializes a workspace of a particular shape (today: `chat`, `auto-quant`). Templates are how OpenAlice's ecosystem grows without bloating the main repo: when a new capability (a research toolkit, a backtest harness, a custom MCP server) is worth packaging, it lives in its own **satellite repo** that a template clones at bootstrap time. The main repo deliberately doesn't accept ecosystem PRs — it owns the Trading domain and the workspace launcher; everything else routes through satellite repos referenced by templates. Means template authors can ship on their own cadence, and OpenAlice's `src/` stays small.
 
-**Inbox** — Workspace-to-user push channel. Agents working inside a workspace call the `inbox_push` MCP tool to surface docs (rendered live from workspace files) plus markdown commentary in a dedicated Inbox tab. The user reads, then clicks the reply bar at the bottom of the entry to jump back into the workspace's session and continue the conversation there. Scheduled Automation runs (cron / heartbeat) deliver here too, under a synthetic automation workspace id — the Inbox is the single push surface.
+**Inbox** — Workspace-to-user push channel. Agents working inside a workspace call the `inbox_push` MCP tool to surface docs (rendered live from workspace files) plus markdown commentary in a dedicated Inbox tab. The user reads, then clicks the reply bar at the bottom of the entry to jump back into the workspace's session and continue the conversation there. Scheduled runs deliver here too: a cron job spawns a headless Workspace whose agent calls `inbox_push` like any other — the Inbox is the single push surface.
 
 ## Workspace chat
 
@@ -310,8 +305,8 @@ URL in the terminal — always trust the terminal output over the number in
 this README.
 
 You should see Alice's sidebar (Inbox / Workspaces / Chat / Market / News).
-Click **Chat** and start typing — no API keys, no config files to edit. The
-default provider routes through your local Claude Code login.
+Click **Chat** and start typing — no API keys, no config files to edit. It
+uses your local Claude Code login.
 
 ### 4. When things go wrong
 
@@ -411,7 +406,7 @@ for how to retrieve the first-run token from `docker logs`.
 
 All config lives in `data/config/` as JSON files with Zod validation. Missing files fall back to sensible defaults. You can edit these files directly or use the Web UI.
 
-**AI Provider** — The default provider is Claude (Agent SDK), which uses your local Claude Code login — no API key needed. To use the [Vercel AI SDK](https://sdk.vercel.ai/docs) instead (Anthropic, OpenAI, Google, etc.), switch `ai-provider.json` to `vercel-ai-sdk` and add your API key. Both can be switched at runtime via the Web UI.
+**AI Provider** — The model runs inside the workspace CLI using its own login — e.g. your local Claude Code or Codex login, no API key needed. For api-key providers (Anthropic, OpenAI, Google, GLM, MiniMax, Kimi, DeepSeek, …), add credentials in the Web UI's **AI Provider** vault; each credential declares the wire shapes it speaks and gets injected into workspaces, picking the shape the target agent uses. Subscription logins stay in the CLI.
 
 **Trading** — Unified Trading Account (UTA) architecture. Each account in `accounts.json` becomes a UTA with its own broker connection, git history, and guard config. Broker-specific settings live in the `brokerConfig` field — each broker type declares its own schema and validates it internally.
 
@@ -419,7 +414,7 @@ All config lives in `data/config/` as JSON files with Zod validation. Missing fi
 |------|---------|
 | `engine.json` | Trading pairs, tick interval, timeframe |
 | `agent.json` | Max agent steps, evolution mode toggle, Claude Code tool permissions |
-| `ai-provider.json` | Active AI provider (`agent-sdk` or `vercel-ai-sdk`), login method, switchable at runtime |
+| `ai-provider.json` | Central credential vault — api-key credentials + their wire capabilities, injected into workspaces |
 | `accounts.json` | Trading accounts with `type`, `enabled`, `guards`, and `brokerConfig` (broker-specific settings) |
 | `connectors.json` | Web/MCP server ports |
 | `web-subchannels.json` | Web UI sub-channel definitions with per-channel AI provider overrides |
@@ -428,14 +423,12 @@ All config lives in `data/config/` as JSON files with Zod validation. Missing fi
 | `news.json` | RSS feeds, fetch interval, retention period |
 | `snapshot.json` | Account snapshot interval and retention |
 | `compaction.json` | Context window limits, auto-compaction thresholds |
-| `heartbeat.json` | Heartbeat enable/disable, interval, active hours |
 
-Persona and heartbeat prompts use a **default + user override** pattern:
+The persona prompt uses a **default + user override** pattern:
 
 | Default (git-tracked) | User override (gitignored) |
 |------------------------|---------------------------|
 | `default/persona.default.md` | `data/brain/persona.md` |
-| `default/heartbeat.default.md` | `data/brain/heartbeat.md` |
 
 On first run, defaults are auto-copied to the user override path. Edit the user files to customize without touching version control.
 
