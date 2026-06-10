@@ -355,6 +355,39 @@ names like "united_states", "japan").`,
       },
     }),
 
+    economyCountryHousePrices: tool({
+      description: `Get a country's real house price index (OECD, keyless).
+
+Quarterly index (2015 = 100) of inflation-adjusted residential property
+prices. The property-cycle read for cross-country comparison. Same country
+coverage as economyCountryCpi (snake_case names).`,
+      inputSchema: z.object({
+        country: z.string().describe('Country slug, e.g. "united_states", "japan"'),
+        start_date: z.string().optional().describe('Start date YYYY-MM-DD (optional)'),
+      }).meta({ examples: [{ country: 'united_states' }] }),
+      execute: async ({ country, start_date }) => {
+        const params: Record<string, unknown> = { country, provider: OECD_PROVIDER }
+        if (start_date !== undefined) params.start_date = start_date
+        return await economyClient.getHousePriceIndex(params)
+      },
+    }),
+
+    economyCountrySharePrices: tool({
+      description: `Get a country's share price index (OECD, keyless).
+
+Monthly equity-market index (2015 = 100), normalized across countries —
+use for cross-country equity performance comparison rather than levels.`,
+      inputSchema: z.object({
+        country: z.string().describe('Country slug, e.g. "japan", "germany"'),
+        start_date: z.string().optional().describe('Start date YYYY-MM-DD (optional)'),
+      }).meta({ examples: [{ country: 'japan' }] }),
+      execute: async ({ country, start_date }) => {
+        const params: Record<string, unknown> = { country, provider: OECD_PROVIDER }
+        if (start_date !== undefined) params.start_date = start_date
+        return await economyClient.getSharePriceIndex(params)
+      },
+    }),
+
     economyEuroAreaBop: tool({
       description: `Get the euro-area balance of payments from the ECB (keyless).
 

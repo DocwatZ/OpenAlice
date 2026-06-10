@@ -33,7 +33,8 @@ export class OECDHousePriceIndexFetcher extends Fetcher {
     const rows = await fetchOecdCsv(
       // Agency moved in the 2025/26 SDMX reshuffle (was OECD.SDD.TPS, versioned).
       'OECD.ECO.MPD,DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES',
-      `${cc}.${freq}.RHP._T.IX.`,
+      // New DSD is 4-dimensional: REF_AREA.FREQ.MEASURE.UNIT_MEASURE
+      `${cc}.${freq}.RHP.IX`,
     )
 
     return rows

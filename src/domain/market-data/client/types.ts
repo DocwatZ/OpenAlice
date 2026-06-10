@@ -33,7 +33,7 @@ import type {
   BlsSearchData, BlsSeriesData,
   ConsumerPriceIndexData, CountryInterestRatesData, CompositeLeadingIndicatorData,
   PortInfoData, PortVolumeData, ChokepointInfoData, ChokepointVolumeData,
-  RetailPricesData, BalanceOfPaymentsData,
+  RetailPricesData, BalanceOfPaymentsData, HousePriceIndexData, SharePriceIndexData,
   FomcDocumentsData, CentralBankHoldingsData, PrimaryDealerPositioningData,
 } from '@traderalice/opentypebb'
 
@@ -117,6 +117,8 @@ export interface EconomyClientLike {
   getInterestRates(params?: Record<string, unknown>): Promise<CountryInterestRatesData[]>
   getCompositeLeadingIndicator(params?: Record<string, unknown>): Promise<CompositeLeadingIndicatorData[]>
   getRetailPrices(params?: Record<string, unknown>): Promise<RetailPricesData[]>
+  getHousePriceIndex(params?: Record<string, unknown>): Promise<HousePriceIndexData[]>
+  getSharePriceIndex(params?: Record<string, unknown>): Promise<SharePriceIndexData[]>
   // ECB — euro-area balance of payments (keyless).
   getBalanceOfPayments(params?: Record<string, unknown>): Promise<BalanceOfPaymentsData[]>
   // Fed specials — FOMC document links (fed website), balance sheet (FRED

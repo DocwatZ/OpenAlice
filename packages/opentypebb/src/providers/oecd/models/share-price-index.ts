@@ -32,8 +32,11 @@ export class OECDSharePriceIndexFetcher extends Fetcher {
     const cc = resolveCountryCode(query.country)
     const freq = FREQ_MAP[query.frequency] ?? 'M'
     const rows = await fetchOecdCsv(
-      'OECD.SDD.STES,DSD_KEI@DF_KEI,4.0',
-      `${cc}.${freq}.SHARE._Z.IX._T.`,
+      // DSD_KEI was retired in the OECD SDMX reshuffle; share prices live
+      // in the Financial market dataflow now (9-dim key, wildcards after
+      // MEASURE select IX/_Z/.../N automatically — only one series exists).
+      'OECD.SDD.STES,DSD_STES@DF_FINMARK',
+      `${cc}.${freq}.SHARE......`,
     )
 
     return rows
