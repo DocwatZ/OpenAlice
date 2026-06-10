@@ -4,11 +4,13 @@
  * board-shaped payloads with the explicit meta envelope.
  */
 
-import type { EquityClientLike } from '../client/types.js'
-import type { CalendarBoard, MoversBoard, ReferenceDataService } from './types.js'
+import type { EconomyClientLike, EquityClientLike } from '../client/types.js'
+import type { CalendarBoard, MacroBoard, MoversBoard, ReferenceDataService } from './types.js'
+import { fetchMacroBoard } from './macro.js'
 
 export interface ReferenceDataDeps {
   equityClient: EquityClientLike
+  economyClient: EconomyClientLike
   /** Configured default equity provider — the meta label. On the SDK backend
    *  the client routes by its constructed default, so the label is the
    *  REQUESTED provider (same caveat as the bar layer's vendor meta). */
@@ -85,6 +87,12 @@ export function createReferenceData(deps: ReferenceDataDeps): ReferenceDataServi
         ...(Object.keys(errors).length ? { errors } : {}),
         meta: { provider: 'fmp', asOf: new Date().toISOString() },
       }
+    },
+
+    async macro(): Promise<MacroBoard> {
+      // Single upstream (FRED) — a failure IS the board failing; let it
+      // throw so the route returns the actionable key-missing message.
+      return fetchMacroBoard(deps.economyClient)
     },
   }
 }

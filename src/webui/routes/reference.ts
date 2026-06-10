@@ -34,5 +34,14 @@ export function createReferenceRoutes(ctx: EngineContext): Hono {
     }
   })
 
+  // GET /api/reference/macro → curated FRED regime dashboard
+  app.get('/macro', async (c) => {
+    try {
+      return c.json(await ctx.reference.macro())
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502)
+    }
+  })
+
   return app
 }

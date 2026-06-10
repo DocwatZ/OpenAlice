@@ -189,6 +189,7 @@ async function main() {
   // calendar, …). Alice's own standard; the future hosted-hub seam.
   const reference = createReferenceData({
     equityClient,
+    economyClient,
     equityProvider: config.marketData.providers.equity,
   })
 

@@ -54,6 +54,36 @@ export interface CalendarBoard {
   meta: ReferenceMeta
 }
 
+// ==================== Macro board ====================
+
+export type MacroUnit = 'percent' | 'usd' | 'index' | 'count'
+
+export interface MacroPoint {
+  date: string
+  value: number
+}
+
+/** One dashboard card — a curated FRED series (or a derived one, e.g.
+ *  CPI YoY computed from the CPIAUCSL index). */
+export interface MacroSeriesCard {
+  /** FRED series id, or a derived id like 'CPI_YOY'. The UI maps known ids
+   *  to localized labels; `label` is the English fallback. */
+  id: string
+  label: string
+  unit: MacroUnit
+  /** Recent observations for the sparkline (nulls dropped, ≤90 points). */
+  points: MacroPoint[]
+  latest: number | null
+  latestDate: string | null
+  /** Latest minus previous observation (same unit as the series). */
+  change: number | null
+}
+
+export interface MacroBoard {
+  cards: MacroSeriesCard[]
+  meta: ReferenceMeta
+}
+
 // ==================== Service ====================
 
 /** Board-shaped reference-data access. The webui routes are thin adapters
@@ -64,4 +94,8 @@ export interface ReferenceDataService {
   /** Upcoming earnings / IPOs / ex-dividend dates. Requires an FMP key —
    *  fails loud with an actionable message when it's missing. */
   calendar(opts?: { days?: number }): Promise<CalendarBoard>
+  /** Curated macro regime dashboard (rates, labor, inflation, oil, dollar).
+   *  FRED-only by design — one key, one multi-series call. Fails loud when
+   *  the FRED key is missing. */
+  macro(): Promise<MacroBoard>
 }

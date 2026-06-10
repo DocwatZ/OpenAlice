@@ -105,6 +105,7 @@ export async function fetchFredMultiSeries(
   } = {},
 ): Promise<Record<string, Record<string, number | null>>> {
   const dataMap: Record<string, Record<string, number | null>> = {}
+  let firstError: unknown = null
 
   for (const seriesId of seriesIds) {
     try {
@@ -119,10 +120,15 @@ export async function fetchFredMultiSeries(
         if (!dataMap[obs.date]) dataMap[obs.date] = {}
         dataMap[obs.date][seriesId] = isNaN(val) ? null : val
       }
-    } catch {
-      // Skip series that fail
+    } catch (err) {
+      // One bad series id must not kill the batch — but remember the
+      // failure so a TOTAL wipeout (bad/missing key rejects everything)
+      // surfaces the real cause instead of "no data found".
+      firstError ??= err
     }
   }
+
+  if (Object.keys(dataMap).length === 0 && firstError) throw firstError
 
   return dataMap
 }

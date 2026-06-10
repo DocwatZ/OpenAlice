@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { createReferenceData } from './service.js'
-import type { EquityClientLike } from '../client/types.js'
+import type { EconomyClientLike, EquityClientLike } from '../client/types.js'
+
+const ECONOMY_STUB = { fredSeries: async () => [] } as unknown as EconomyClientLike
 
 const ROW = {
   symbol: 'NVDA', name: 'NVIDIA', price: 1000, change: 50, percent_change: 0.052, volume: 1e8,
@@ -23,6 +25,7 @@ function mkEquityClient(overrides: Partial<EquityClientLike>): EquityClientLike 
 describe('reference service', () => {
   it('movers: one list failing does not kill the board', async () => {
     const ref = createReferenceData({
+      economyClient: ECONOMY_STUB,
       equityClient: mkEquityClient({ getLosers: async () => { throw new Error('boom') } }),
       equityProvider: 'yfinance',
     })
@@ -34,6 +37,7 @@ describe('reference service', () => {
 
   it('calendar: partial upstream failure is annotated per list, not silent', async () => {
     const ref = createReferenceData({
+      economyClient: ECONOMY_STUB,
       equityClient: mkEquityClient({
         getCalendarIpo: async () => { throw new Error('Unauthorized FMP request -> 403') },
       }),
@@ -49,6 +53,7 @@ describe('reference service', () => {
   it('calendar: all three failing throws loud (missing/invalid key)', async () => {
     const dead = async () => { throw new Error('FMP API key required') }
     const ref = createReferenceData({
+      economyClient: ECONOMY_STUB,
       equityClient: mkEquityClient({
         getCalendarEarnings: dead, getCalendarIpo: dead, getCalendarDividend: dead,
       }),
@@ -58,7 +63,8 @@ describe('reference service', () => {
   })
 
   it('calendar: window defaults to 14 days from today', async () => {
-    const ref = createReferenceData({ equityClient: mkEquityClient({}), equityProvider: 'yfinance' })
+    const ref = createReferenceData({ economyClient: ECONOMY_STUB,
+      equityClient: mkEquityClient({}), equityProvider: 'yfinance' })
     const board = await ref.calendar()
     const start = new Date(board.window.start + 'T00:00:00Z').getTime()
     const end = new Date(board.window.end + 'T00:00:00Z').getTime()

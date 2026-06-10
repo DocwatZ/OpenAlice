@@ -6,7 +6,7 @@ import {
   demoSectorRotation,
 } from '../fixtures/market'
 import type { BarSourceCandidate, BarMeta } from '../../api/market'
-import type { MoversBoard, MoverRow, CalendarBoard } from '../../api/reference'
+import type { MoversBoard, MoverRow, CalendarBoard, MacroBoard, MacroSeriesCard } from '../../api/reference'
 
 const AAPL = 'AAPL'
 
@@ -37,6 +37,7 @@ export const marketHandlers = [
   // Movers board — static snapshot, typed against the canonical contract.
   http.get('/api/reference/movers', () => HttpResponse.json(demoMovers)),
   http.get('/api/reference/calendar', () => HttpResponse.json(demoCalendar)),
+  http.get('/api/reference/macro', () => HttpResponse.json(demoMacro)),
 
   // ---- federated bars (multi-source K-lines) ----
   // AAPL has two demo sources so the source picker is exercised.
@@ -131,4 +132,29 @@ const demoCalendar: CalendarBoard = {
   ],
   window: { start: '2026-06-10', end: '2026-06-24' },
   meta: { provider: 'fmp', asOf: '2026-06-10T13:30:00.000Z' },
+}
+
+function macroCard(id: string, label: string, unit: MacroSeriesCard['unit'], base: number, drift: number): MacroSeriesCard {
+  const points = Array.from({ length: 60 }, (_, i) => ({
+    date: new Date(Date.UTC(2026, 2, 1 + i)).toISOString().slice(0, 10),
+    value: base + drift * i + Math.sin(i / 6) * Math.abs(drift) * 3,
+  }))
+  const latest = points[points.length - 1]
+  const prev = points[points.length - 2]
+  return { id, label, unit, points, latest: latest.value, latestDate: latest.date, change: latest.value - prev.value }
+}
+
+const demoMacro: MacroBoard = {
+  cards: [
+    macroCard('DFF', 'Fed Funds Rate', 'percent', 4.25, -0.002),
+    macroCard('DGS2', '2Y Treasury', 'percent', 3.9, -0.004),
+    macroCard('DGS10', '10Y Treasury', 'percent', 4.3, 0.002),
+    macroCard('T10Y2Y', '10Y–2Y Spread', 'percent', 0.2, 0.005),
+    macroCard('UNRATE', 'Unemployment Rate', 'percent', 4.1, 0.003),
+    macroCard('CPI_YOY', 'CPI YoY', 'percent', 2.8, -0.005),
+    macroCard('ICSA', 'Initial Jobless Claims', 'count', 218000, 350),
+    macroCard('DCOILWTICO', 'WTI Crude', 'usd', 71, 0.12),
+    macroCard('DTWEXBGS', 'Dollar Index (Broad)', 'index', 121, -0.05),
+  ],
+  meta: { provider: 'federal_reserve', asOf: '2026-06-10T13:30:00.000Z' },
 }

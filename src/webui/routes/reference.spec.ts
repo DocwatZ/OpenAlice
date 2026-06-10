@@ -20,6 +20,10 @@ function mkCtx(overrides?: Partial<ReferenceDataService>): EngineContext {
       window: { start: '2026-06-10', end: '2026-06-24' },
       meta: { provider: 'fmp', asOf: '2026-06-10T00:00:00.000Z' },
     }),
+    macro: async () => ({
+      cards: [{ id: 'DFF', label: 'Fed Funds Rate', unit: 'percent' as const, points: [{ date: '2026-06-09', value: 5.25 }], latest: 5.25, latestDate: '2026-06-09', change: 0.01 }],
+      meta: { provider: 'federal_reserve', asOf: '2026-06-10T00:00:00.000Z' },
+    }),
     ...overrides,
   }
   return { reference } as unknown as EngineContext
@@ -46,6 +50,13 @@ describe('reference routes', () => {
     const res = await createReferenceRoutes(ctx).request('/calendar')
     expect(res.status).toBe(502)
     expect((await res.json()).error).toMatch(/FMP/)
+  })
+
+  it('GET /macro returns the regime cards', async () => {
+    const res = await createReferenceRoutes(mkCtx()).request('/macro')
+    const body = await res.json()
+    expect(body.cards[0].id).toBe('DFF')
+    expect(body.meta.provider).toBe('federal_reserve')
   })
 
   it('GET /movers surfaces a failure as { error } with 502, not a crash', async () => {
