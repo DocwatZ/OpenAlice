@@ -404,6 +404,66 @@ for how to retrieve the first-run token from `docker logs`.
   Debians don't have, and workspace bootstrap scripts need `bash` + POSIX
   utils. Alpine doesn't qualify on either count (musl libc, no bash).
 
+## Remote access (Tailscale / LAN / reverse proxy)
+
+Once the bind + admin token basics are in place, OpenAlice works over
+any network path. Ordered from most to least recommended:
+
+**Tailscale / VPN / LAN — direct.** Bind a non-loopback interface and
+log in with the admin token. No origin configuration needed: the UI,
+the API, and the workspace PTY WebSocket all accept same-origin
+requests regardless of which host you reached them through — a LAN IP,
+a Tailscale IP, a MagicDNS name.
+
+```bash
+OPENALICE_BIND_HOST=0.0.0.0 node dist/main.js   # the Docker image already binds 0.0.0.0
+```
+
+Then open `http://<machine-ip-or-tailnet-name>:47331` and paste the
+admin token. Tailscale Serve also works (and gives you HTTPS for free) —
+point it at `127.0.0.1:47331` and you don't even need to change the bind.
+
+**Reverse proxy (Caddy / nginx) — for HTTPS or a domain.** Terminate
+TLS at the proxy and tell Alice which peer to trust:
+
+```bash
+OPENALICE_TRUSTED_PROXIES=127.0.0.1   # the proxy's IP, as Alice sees it
+```
+
+Two things to know:
+
+- Setting `OPENALICE_TRUSTED_PROXIES` disables the localhost bypass —
+  required, since every request now arrives from the proxy's IP. It also
+  makes Alice honor `X-Forwarded-Proto` / `X-Forwarded-For` from that
+  peer (and only that peer).
+- The proxy must pass through `Host`, the WebSocket `Upgrade` headers,
+  and `X-Forwarded-Proto` (so the session cookie is marked `Secure`).
+  Caddy's `reverse_proxy` does all three out of the box. For nginx:
+
+  ```nginx
+  location / {
+    proxy_pass http://127.0.0.1:47331;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+  ```
+
+**Public internet.** Mechanically the same as the reverse-proxy setup,
+but think twice: this is a trading workbench holding broker
+credentials. Prefer keeping it inside a tailnet/VPN; if you do expose
+it, HTTPS is non-negotiable and proxy-level auth (basic auth, OAuth
+proxy, client certs) in front of Alice's own token gate is worth the
+extra step.
+
+**Cross-origin topologies** (UI served from a different origin than the
+backend — none of the setups above need this): allowlist the UI's
+origin explicitly with `WEB_TERMINAL_ALLOWED_ORIGINS=<origin>[,…]` for
+the PTY WebSocket and `OPENALICE_CSRF_TRUSTED_ORIGINS=<origin>[,…]` for
+mutating API calls.
+
 ## Configuration
 
 All config lives in `data/config/` as JSON files with Zod validation. Missing files fall back to sensible defaults. You can edit these files directly or use the Web UI.

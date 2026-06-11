@@ -160,7 +160,7 @@ export class WebPlugin implements Plugin {
     const csrfTrustedOrigins = (process.env['OPENALICE_CSRF_TRUSTED_ORIGINS'] ?? '')
       .split(',').map((s) => s.trim()).filter(Boolean)
     const authDisabled = process.env['OPENALICE_DISABLE_AUTH'] === '1'
-    app.route('/api/auth', createAuthRoutes())
+    app.route('/api/auth', createAuthRoutes({ trustedProxies }))
     app.use('*', createAuthMiddleware({
       trustedProxies,
       csrfTrustedOrigins,
