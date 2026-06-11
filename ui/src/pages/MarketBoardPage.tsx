@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LineChart, Line, ResponsiveContainer, YAxis, XAxis, Tooltip } from 'recharts'
+import { useReferenceBoard } from '../components/market/useReferenceBoard'
+import { BoardMeta } from '../components/market/BoardMeta'
 import { PageHeader } from '../components/PageHeader'
 import { SeriesCard } from '../components/market/SeriesCard'
 import {
@@ -58,32 +60,8 @@ type MoversList = 'gainers' | 'losers' | 'active' | 'undervaluedGrowth' | 'growt
 
 function MoversBoardView() {
   const { t } = useTranslation()
-  const [data, setData] = useState<MoversBoard | null>(null)
+  const { data, updatedAt, loading, error } = useReferenceBoard<MoversBoard>(referenceApi.movers, REFRESH_MS)
   const [list, setList] = useState<MoversList>('gainers')
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      try {
-        const res = await referenceApi.movers()
-        if (!alive) return
-        setData(res)
-        setUpdatedAt(new Date())
-        setError(null)
-      } catch (err) {
-        if (!alive) return
-        setError(err instanceof Error ? err.message : 'Failed to load')
-      } finally {
-        if (alive) setLoading(false)
-      }
-    }
-    load()
-    const timer = setInterval(load, REFRESH_MS)
-    return () => { alive = false; clearInterval(timer) }
-  }, [])
 
   const rows = data?.[list] ?? []
 
@@ -94,7 +72,7 @@ function MoversBoardView() {
         description={
           <>
             {t('market.moversSubtitle')}
-            {data && <ProviderBadge meta={data.meta} />}
+            {data && <BoardMeta meta={data.meta} />}
           </>
         }
         live={{ lastUpdated: updatedAt }}
@@ -140,20 +118,6 @@ function listLabel(k: MoversList, t: ReturnType<typeof useTranslation>['t']): st
     case 'smallCaps': return t('market.moversSmallCaps')
     case 'undervaluedLarge': return t('market.moversUndervaluedLarge')
   }
-}
-
-/** Explicit provider label — same disambiguation philosophy as bar sources.
- *  provider = upstream provenance; origin = which path served (hub vs your
- *  own keys). Both explicit, neither silent. */
-function ProviderBadge({ meta }: { meta: ReferenceMeta }) {
-  return (
-    <span className="text-text-muted/50">
-      {' · '}{meta.provider}
-      {meta.origin === 'hub' && <span className="ml-1.5 text-[9px] uppercase tracking-wide px-1 py-px rounded bg-accent/15 text-accent">hub</span>}
-      {meta.origin === 'local' && <span className="ml-1.5 text-[9px] uppercase tracking-wide px-1 py-px rounded bg-bg-tertiary text-text-muted">local</span>}
-      {meta.stale && <span className="ml-1.5 text-[9px] uppercase tracking-wide px-1 py-px rounded bg-amber-500/15 text-amber-400">stale</span>}
-    </span>
-  )
 }
 
 function MoversTable({ rows }: { rows: MoverRow[] }) {
@@ -202,32 +166,8 @@ type CalendarList = 'earnings' | 'ipos' | 'dividends'
 
 function CalendarBoardView() {
   const { t } = useTranslation()
-  const [data, setData] = useState<CalendarBoard | null>(null)
+  const { data, updatedAt, loading, error } = useReferenceBoard<CalendarBoard>(referenceApi.calendar, 30 * 60 * 1000)
   const [list, setList] = useState<CalendarList>('earnings')
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      try {
-        const res = await referenceApi.calendar()
-        if (!alive) return
-        setData(res)
-        setUpdatedAt(new Date())
-        setError(null)
-      } catch (err) {
-        if (!alive) return
-        setError(err instanceof Error ? err.message : 'Failed to load')
-      } finally {
-        if (alive) setLoading(false)
-      }
-    }
-    load()
-    const timer = setInterval(load, 30 * 60 * 1000)
-    return () => { alive = false; clearInterval(timer) }
-  }, [])
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -236,7 +176,7 @@ function CalendarBoardView() {
         description={
           <>
             {t('market.calendarSubtitle')}
-            {data && <><span className="text-text-muted/50"> · {data.window.start} → {data.window.end}</span><ProviderBadge meta={data.meta} /></>}
+            {data && <BoardMeta meta={data.meta} extra={`${data.window.start} → ${data.window.end}`} />}
           </>
         }
         live={{ lastUpdated: updatedAt }}
@@ -378,31 +318,7 @@ function CalTable({ head, rightCols = [], children }: { head: string[]; rightCol
 
 function MacroBoardView() {
   const { t } = useTranslation()
-  const [data, setData] = useState<MacroBoard | null>(null)
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      try {
-        const res = await referenceApi.macro()
-        if (!alive) return
-        setData(res)
-        setUpdatedAt(new Date())
-        setError(null)
-      } catch (err) {
-        if (!alive) return
-        setError(err instanceof Error ? err.message : 'Failed to load')
-      } finally {
-        if (alive) setLoading(false)
-      }
-    }
-    load()
-    const timer = setInterval(load, 30 * 60 * 1000)
-    return () => { alive = false; clearInterval(timer) }
-  }, [])
+  const { data, updatedAt, loading, error } = useReferenceBoard<MacroBoard>(referenceApi.macro, 30 * 60 * 1000)
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -411,7 +327,7 @@ function MacroBoardView() {
         description={
           <>
             {t('market.macroSubtitle')}
-            {data && <ProviderBadge meta={data.meta} />}
+            {data && <BoardMeta meta={data.meta} />}
           </>
         }
         live={{ lastUpdated: updatedAt }}
@@ -459,31 +375,7 @@ function macroLabel(card: MacroSeriesCard, t: ReturnType<typeof useTranslation>[
 
 function TermStructureBoardView() {
   const { t } = useTranslation()
-  const [data, setData] = useState<TermStructureBoard | null>(null)
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      try {
-        const res = await referenceApi.termStructure()
-        if (!alive) return
-        setData(res)
-        setUpdatedAt(new Date())
-        setError(null)
-      } catch (err) {
-        if (!alive) return
-        setError(err instanceof Error ? err.message : 'Failed to load')
-      } finally {
-        if (alive) setLoading(false)
-      }
-    }
-    load()
-    const timer = setInterval(load, 5 * 60 * 1000)
-    return () => { alive = false; clearInterval(timer) }
-  }, [])
+  const { data, updatedAt, loading, error } = useReferenceBoard<TermStructureBoard>(referenceApi.termStructure, 5 * 60 * 1000)
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -492,7 +384,7 @@ function TermStructureBoardView() {
         description={
           <>
             {t('market.termSubtitle')}
-            {data && <ProviderBadge meta={data.meta} />}
+            {data && <BoardMeta meta={data.meta} />}
           </>
         }
         live={{ lastUpdated: updatedAt }}
@@ -566,31 +458,7 @@ function TermCurveCard({ curve }: { curve: TermCurve }) {
 
 function GlobalMacroBoardView() {
   const { t } = useTranslation()
-  const [data, setData] = useState<GlobalMacroBoard | null>(null)
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      try {
-        const res = await referenceApi.globalMacro()
-        if (!alive) return
-        setData(res)
-        setUpdatedAt(new Date())
-        setError(null)
-      } catch (err) {
-        if (!alive) return
-        setError(err instanceof Error ? err.message : 'Failed to load')
-      } finally {
-        if (alive) setLoading(false)
-      }
-    }
-    load()
-    const timer = setInterval(load, 60 * 60 * 1000)
-    return () => { alive = false; clearInterval(timer) }
-  }, [])
+  const { data, updatedAt, loading, error } = useReferenceBoard<GlobalMacroBoard>(referenceApi.globalMacro, 60 * 60 * 1000)
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -599,7 +467,7 @@ function GlobalMacroBoardView() {
         description={
           <>
             {t('market.globalMacroSubtitle')}
-            {data && <ProviderBadge meta={data.meta} />}
+            {data && <BoardMeta meta={data.meta} />}
           </>
         }
         live={{ lastUpdated: updatedAt }}
@@ -659,31 +527,7 @@ function GlobalCell({ cell, fmt, colorBy }: { cell: GlobalMacroCell; fmt: (v: nu
 
 function ShippingBoardView() {
   const { t } = useTranslation()
-  const [data, setData] = useState<ShippingBoard | null>(null)
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      try {
-        const res = await referenceApi.shipping()
-        if (!alive) return
-        setData(res)
-        setUpdatedAt(new Date())
-        setError(null)
-      } catch (err) {
-        if (!alive) return
-        setError(err instanceof Error ? err.message : 'Failed to load')
-      } finally {
-        if (alive) setLoading(false)
-      }
-    }
-    load()
-    const timer = setInterval(load, 60 * 60 * 1000)
-    return () => { alive = false; clearInterval(timer) }
-  }, [])
+  const { data, updatedAt, loading, error } = useReferenceBoard<ShippingBoard>(referenceApi.shipping, 60 * 60 * 1000)
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -692,7 +536,7 @@ function ShippingBoardView() {
         description={
           <>
             {t('market.shippingSubtitle')}
-            {data && <ProviderBadge meta={data.meta} />}
+            {data && <BoardMeta meta={data.meta} />}
           </>
         }
         live={{ lastUpdated: updatedAt }}
@@ -752,31 +596,7 @@ function ChokepointCard({ curve }: { curve: ShippingCurve }) {
 
 function FedBoardView() {
   const { t } = useTranslation()
-  const [data, setData] = useState<FedBoard | null>(null)
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    const load = async () => {
-      try {
-        const res = await referenceApi.fed()
-        if (!alive) return
-        setData(res)
-        setUpdatedAt(new Date())
-        setError(null)
-      } catch (err) {
-        if (!alive) return
-        setError(err instanceof Error ? err.message : 'Failed to load')
-      } finally {
-        if (alive) setLoading(false)
-      }
-    }
-    load()
-    const timer = setInterval(load, 60 * 60 * 1000)
-    return () => { alive = false; clearInterval(timer) }
-  }, [])
+  const { data, updatedAt, loading, error } = useReferenceBoard<FedBoard>(referenceApi.fed, 60 * 60 * 1000)
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -785,7 +605,7 @@ function FedBoardView() {
         description={
           <>
             {t('market.fedSubtitle')}
-            {data && <ProviderBadge meta={data.meta} />}
+            {data && <BoardMeta meta={data.meta} />}
           </>
         }
         live={{ lastUpdated: updatedAt }}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { BoardMeta } from '../components/market/BoardMeta'
 import { PageHeader } from '../components/PageHeader'
 import { SearchBox } from '../components/market/SearchBox'
 import { SeriesCard } from '../components/market/SeriesCard'
@@ -28,7 +29,7 @@ export function MarketPage() {
         <div className="flex flex-col gap-2">
           <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-muted/60">
             {t('market.valuationTitle')}
-            {strip && <span className="ml-2 normal-case font-normal tracking-normal text-text-muted/50">{strip.meta.provider}{strip.meta.origin === 'hub' ? ' · hub' : strip.meta.origin === 'local' ? ' · local' : ''}{strip.meta.stale ? ' · stale' : ''}</span>}
+            {strip && <span className="ml-2 normal-case font-normal tracking-normal"><BoardMeta meta={strip.meta} /></span>}
           </h3>
           {stripError && (
             <div className="text-[12px] text-text-muted/70 border border-border rounded-md px-3 py-2">{stripError}</div>
