@@ -230,7 +230,6 @@ export const zhHant: Resources = {
     webhook: 'Webhook',
   },
   news: {
-    allNews: '所有新聞',
     lookback1h: '1 小時',
     lookback12h: '12 小時',
     lookback24h: '24 小時',

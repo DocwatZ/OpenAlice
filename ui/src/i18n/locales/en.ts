@@ -233,7 +233,6 @@ export const en = {
     webhook: 'Webhook',
   },
   news: {
-    allNews: 'All News',
     lookback1h: '1 hour',
     lookback12h: '12 hours',
     lookback24h: '24 hours',

@@ -222,7 +222,6 @@ export const ja: Resources = {
     webhook: 'Webhook',
   },
   news: {
-    allNews: 'すべてのニュース',
     lookback1h: '1 時間',
     lookback12h: '12 時間',
     lookback24h: '24 時間',

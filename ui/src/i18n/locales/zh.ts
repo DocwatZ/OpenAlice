@@ -222,7 +222,6 @@ export const zh: Resources = {
     webhook: 'Webhook',
   },
   news: {
-    allNews: '全部新闻',
     lookback1h: '1 小时',
     lookback12h: '12 小时',
     lookback24h: '24 小时',
