@@ -119,7 +119,13 @@ export function registerCliRoutes(app: Hono, deps: CliGatewayDeps): void {
         if (!tool) continue
         let schema: unknown = {}
         try {
-          schema = z.toJSONSchema(tool.inputSchema as z.ZodType)
+          // io:'input' + unrepresentable:'any' — schemas with .transform()
+          // (e.g. trading's positiveNumeric) have no output-side JSON-schema
+          // representation; the default call threw and the catch silently
+          // rendered "(no flags)" for every order verb, leaving agents to
+          // guess flag names from prose. Input-side conversion is exactly
+          // what a CLI manifest wants anyway.
+          schema = z.toJSONSchema(tool.inputSchema as z.ZodType, { io: 'input', unrepresentable: 'any' })
         } catch {
           /* leave {} */
         }

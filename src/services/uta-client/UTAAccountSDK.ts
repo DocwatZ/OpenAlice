@@ -13,6 +13,8 @@
 import type {
   UTAClient,
   AccountInfo,
+  OrderHistoryEntry,
+  TradeHistoryEntry,
   Position,
   OpenOrder,
   Quote,
@@ -207,6 +209,22 @@ export class UTAAccountSDK {
 
   status(): Promise<GitStatus> {
     return this.client.get<GitStatus>(`/api/trading/uta/${encodeURIComponent(this.id)}/wallet/status`)
+  }
+
+  /** Exchange-frontend projection: one row per order, lifecycle collapsed. */
+  async orderHistory(limit = 50): Promise<OrderHistoryEntry[]> {
+    const r = await this.client.get<{ orders: OrderHistoryEntry[] }>(
+      `/api/trading/uta/${encodeURIComponent(this.id)}/order-history?limit=${limit}`,
+    )
+    return r.orders
+  }
+
+  /** Exchange-frontend projection: fills only (reconcile foldings labeled). */
+  async tradeHistory(limit = 50): Promise<TradeHistoryEntry[]> {
+    const r = await this.client.get<{ trades: TradeHistoryEntry[] }>(
+      `/api/trading/uta/${encodeURIComponent(this.id)}/trade-history?limit=${limit}`,
+    )
+    return r.trades
   }
 
   getState(): Promise<GitState> {

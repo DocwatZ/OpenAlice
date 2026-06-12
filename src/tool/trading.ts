@@ -13,6 +13,11 @@ import { Contract, UNSET_DECIMAL, coerceSecType } from '@traderalice/ibkr'
 import { BrokerError, type OpenOrder } from '@traderalice/uta-protocol'
 import type { UTAManagerSDK } from '@/services/uta-client/index.js'
 import { normalizeBrokerSearchPattern } from '@traderalice/uta-protocol'
+import {
+  compactAccountInfo, compactCommit, compactContract, compactContractDetails,
+  compactOperation, compactPushResult, compactStageResult, compactStatus,
+  money, price,
+} from './trading-compact.js'
 // `Contract.aliceId` declaration merge is registered as a side-effect
 // of `@traderalice/uta-protocol`'s barrel — already pulled in above.
 
@@ -177,7 +182,7 @@ hitting the broker, which otherwise expects the bare base ticker.`,
         try {
           const details = await uta.getContractDetails(query)
           if (!details) return { error: 'No contract details found.' }
-          return { source: uta.id, ...details }
+          return { source: uta.id, ...compactContractDetails(details) }
         } catch (err) {
           return handleBrokerError(err)
         }
@@ -194,7 +199,7 @@ If this tool returns an error with transient=true, wait a few seconds and retry 
         const targets = await manager.resolve(source)
         if (targets.length === 0) return { error: 'No accounts available.' }
         try {
-          const results = await Promise.all(targets.map(async (uta) => ({ source: uta.id, ...await uta.getAccount() })))
+          const results = await Promise.all(targets.map(async (uta) => ({ source: uta.id, ...compactAccountInfo(await uta.getAccount()) })))
           return results.length === 1 ? results[0] : results
         } catch (err) {
           return handleBrokerError(err)
@@ -258,8 +263,8 @@ If this tool returns an error with transient=true, wait a few seconds and retry 
               const percentOfPortfolio = totalMarketValueUsd.gt(0) ? mvUsd.div(totalMarketValueUsd).mul(100) : new Decimal(0)
               allPositions.push({
                 source: uta.id, symbol: pos.contract.symbol, currency: pos.currency, side: pos.side,
-                quantity: pos.quantity.toString(), avgCost: pos.avgCost, marketPrice: pos.marketPrice,
-                marketValue: pos.marketValue, unrealizedPnL: pos.unrealizedPnL, realizedPnL: pos.realizedPnL,
+                quantity: pos.quantity.toString(), avgCost: price(pos.avgCost), marketPrice: price(pos.marketPrice),
+                marketValue: money(pos.marketValue), unrealizedPnL: money(pos.unrealizedPnL), realizedPnL: money(pos.realizedPnL),
                 percentageOfEquity: `${percentOfEquity.toFixed(1)}%`,
                 percentageOfPortfolio: `${percentOfPortfolio.toFixed(1)}%`,
               })
@@ -337,7 +342,8 @@ If this tool returns an error with transient=true, wait a few seconds and retry 
           // UnifiedTradingAccount.getQuote (and the route), so the tool
           // just hands over the aliceId stub.
           const contract = Object.assign(new Contract(), { aliceId })
-          return { source: uta.id, ...await uta.getQuote(contract) }
+          const quote = await uta.getQuote(contract)
+          return { source: uta.id, ...quote, contract: compactContract(quote.contract) }
         } catch (err) {
           return handleBrokerError(err)
         }
@@ -385,7 +391,7 @@ IMPORTANT: Check this BEFORE making new trading decisions.`,
       execute: async ({ hash }) => {
         for (const uta of await manager.resolve()) {
           const commit = await uta.show(hash)
-          if (commit) return { source: uta.id, ...commit }
+          if (commit) return { source: uta.id, ...compactCommit(commit) }
         }
         return { error: `Commit ${hash} not found in any account` }
       },
@@ -396,7 +402,7 @@ IMPORTANT: Check this BEFORE making new trading decisions.`,
       inputSchema: z.object({ source: z.string().optional().describe(sourceDesc(false)) }).meta({ examples: [{ source: 'alpaca-paper' }] }),
       execute: async ({ source }) => {
         const targets = await manager.resolve(source)
-        const results = await Promise.all(targets.map(async (uta) => ({ source: uta.id, ...await uta.status() })))
+        const results = await Promise.all(targets.map(async (uta) => ({ source: uta.id, ...compactStatus(await uta.status()) })))
         return results.length === 1 ? results[0] : results
       },
     }),
@@ -459,7 +465,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
           limitPrice: z.string().optional().describe('Limit price for stop-limit SL (omit for stop-market)'),
         }).optional().describe('Stop loss order (single-level, full quantity)'),
       }).meta({ examples: [{ source: 'alpaca-paper', aliceId: 'alpaca-paper|AAPL', action: 'BUY', orderType: 'MKT', totalQuantity: '1' }] }),
-      execute: async ({ source, ...params }) => (await manager.resolveOne(source)).stagePlaceOrder(params),
+      execute: async ({ source, ...params }) => compactStageResult(await (await manager.resolveOne(source)).stagePlaceOrder(params)),
     }),
 
     modifyOrder: tool({
@@ -476,7 +482,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         tif: z.enum(['DAY', 'GTC', 'IOC', 'FOK', 'OPG', 'GTD']).optional().describe('New time in force'),
         goodTillDate: z.string().optional().describe('New expiration date'),
       }).meta({ examples: [{ source: 'alpaca-paper', orderId: '1', lmtPrice: '150' }] }),
-      execute: async ({ source, ...params }) => (await manager.resolveOne(source)).stageModifyOrder(params),
+      execute: async ({ source, ...params }) => compactStageResult(await (await manager.resolveOne(source)).stageModifyOrder(params)),
     }),
 
     closePosition: tool({
@@ -487,7 +493,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         symbol: z.string().optional().describe('Human-readable symbol. Optional.'),
         qty: positiveNumeric.optional().describe('Number of shares to sell. Decimal string. Default: sell all.'),
       }).meta({ examples: [{ source: 'alpaca-paper', aliceId: 'alpaca-paper|AAPL' }] }),
-      execute: async ({ source, ...params }) => (await manager.resolveOne(source)).stageClosePosition(params),
+      execute: async ({ source, ...params }) => compactStageResult(await (await manager.resolveOne(source)).stageClosePosition(params)),
     }),
 
     cancelOrder: tool({
@@ -496,7 +502,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
         source: z.string().describe(sourceDesc(true)),
         orderId: z.string().describe('Order ID to cancel'),
       }).meta({ examples: [{ source: 'alpaca-paper', orderId: '1' }] }),
-      execute: async ({ source, orderId }) => (await manager.resolveOne(source)).stageCancelOrder({ orderId }),
+      execute: async ({ source, orderId }) => compactStageResult(await (await manager.resolveOne(source)).stageCancelOrder({ orderId })),
     }),
 
     tradingCommit: tool({
@@ -532,7 +538,7 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
           if (uncommitted.length > 0) {
             return {
               error: 'You have staged operations that are NOT committed yet. Call tradingCommit first, then tradingPush.',
-              uncommitted: uncommitted.map(({ uta, status }) => ({ source: uta.id, staged: status.staged })),
+              uncommitted: uncommitted.map(({ uta, status }) => ({ source: uta.id, staged: status.staged.map(compactOperation) })),
             }
           }
           return { message: 'No committed operations to push.' }
@@ -541,8 +547,69 @@ Optional: attach takeProfit and/or stopLoss for automatic exit orders.`,
           message: 'Push requires manual approval. The user can approve pending operations from any connected channel (Web UI, Telegram /trading, etc).',
           pending: pending.map(({ uta, status }) => ({
             source: uta.id,
-            ...status,
+            ...compactStatus(status),
           })),
+        }
+      },
+    }),
+
+    tradingReject: tool({
+      description: 'Discard staged (and committed-but-unpushed) operations — the undo for a wrong stage (like "git reset"). Nothing is sent to the broker; the rejection is recorded in the trading log.',
+      inputSchema: z.object({
+        source: z.string().describe(sourceDesc(true)),
+        reason: z.string().optional().describe('Why the staged operations are being discarded'),
+      }).meta({ examples: [{ source: 'alpaca-paper', reason: 'wrong limit price' }] }),
+      execute: async ({ source, reason }) => {
+        try {
+          const uta = await manager.resolveOne(source)
+          const status = await uta.status()
+          if (status.staged.length === 0) return { message: 'Nothing staged to reject.' }
+          // reject() requires a prepared commit — prepare one transparently
+          // so the AI's mental model stays "stage → reject = undo".
+          if (!status.pendingHash) await uta.commit(reason ?? 'discarding staged operations')
+          return { source: uta.id, ...await uta.reject(reason) }
+        } catch (err) {
+          return handleBrokerError(err)
+        }
+      },
+    }),
+
+    orderHistory: tool({
+      description: 'Order history — one row per order with its lifecycle collapsed (submitted → filled/cancelled/rejected, fill price+qty, source "external" for orders placed outside Alice). Prefer this over tradingLog when analyzing what happened to orders.',
+      inputSchema: z.object({
+        source: z.string().optional().describe(sourceDesc(false)),
+        limit: z.number().int().min(1).max(200).optional().describe('Max rows per account (default 50)'),
+      }).meta({ examples: [{ source: 'alpaca-paper', limit: 20 }] }),
+      execute: async ({ source, limit }) => {
+        const targets = await manager.resolve(source)
+        if (targets.length === 0) return { error: 'No accounts available.' }
+        try {
+          const all = (await Promise.all(targets.map(async (uta) =>
+            (await uta.orderHistory(limit ?? 50)).map((o) => ({ account: uta.id, ...o })),
+          ))).flat()
+          return all.length === 0 ? { orders: [], message: 'No order history yet.' } : all
+        } catch (err) {
+          return handleBrokerError(err)
+        }
+      },
+    }),
+
+    tradeHistory: tool({
+      description: 'Trade history — fills only, with execution price/qty/value. Entries with source "reconcile" are balance drift folded in at observed price (external transfers, fees), not real fills.',
+      inputSchema: z.object({
+        source: z.string().optional().describe(sourceDesc(false)),
+        limit: z.number().int().min(1).max(200).optional().describe('Max rows per account (default 50)'),
+      }).meta({ examples: [{ source: 'alpaca-paper', limit: 20 }] }),
+      execute: async ({ source, limit }) => {
+        const targets = await manager.resolve(source)
+        if (targets.length === 0) return { error: 'No accounts available.' }
+        try {
+          const all = (await Promise.all(targets.map(async (uta) =>
+            (await uta.tradeHistory(limit ?? 50)).map((t) => ({ account: uta.id, ...t })),
+          ))).flat()
+          return all.length === 0 ? { trades: [], message: 'No trades yet.' } : all
+        } catch (err) {
+          return handleBrokerError(err)
         }
       },
     }),
