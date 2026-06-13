@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://openalice.ai"><img src="https://img.shields.io/badge/Website-blue" alt="Website"></a> · <a href="https://openalice.ai/docs"><img src="https://img.shields.io/badge/Docs-green" alt="Docs"></a> · <a href="https://x.com/OpenAliceAI"><img src="https://img.shields.io/badge/X-000000?logo=x&logoColor=white" alt="X (Twitter)"></a> · <a href="https://discord.gg/zf4STmrQd8"><img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white" alt="Discord"></a> · <a href="https://qm.qq.com/q/iSg6O4FmrC"><img src="https://img.shields.io/badge/QQ-12B7F5" alt="QQ"></a>
+  <a href="https://openalice.ai"><img src="https://img.shields.io/badge/Website-blue" alt="Website"></a> · <a href="https://openalice.ai/docs"><img src="https://img.shields.io/badge/Docs-green" alt="Docs"></a>
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 Alice runs on your own machine, because trading involves private keys and real money — that trust can't be outsourced.
 
 > [!CAUTION]
-> **OpenAlice is experimental software in active development.** Many features and interfaces are incomplete and subject to breaking changes. Do not use this software for live trading with real funds unless you fully understand and accept the risks involved. The authors provide no guarantees of correctness, reliability, or profitability, and accept no liability for financial losses.
+> **OpenAlice is experimental software in active development.** Many features and interfaces are incomplete and subject to breaking changes. Do not use this software for live trading with real funds unless you understand the risks and are comfortable debugging issues yourself.
 
 ## Features
 
@@ -37,7 +37,7 @@ Alice runs on your own machine, because trading involves private keys and real m
 
 ### Research & Analysis
 
-- **Market data** — equity, crypto, commodity, currency, and macro data, **zero API keys out of the box**: low-frequency boards and datasets are served by the hosted **TraderHub** (https://traderhub.openalice.ai), with your own provider keys as the fallback path. Unified cross-asset symbol search and technical indicator calculator
+- **Market data** — equity, crypto, commodity, currency, and macro data, **zero API keys out of the box**: low-frequency boards and datasets are served by the hosted **TraderHub** (https://traderhub.ai) while direct providers can be configured as fallbacks
 - **Fundamental research** — company profiles, financial statements, ratios, analyst estimates, earnings calendar, insider trading, and market movers. Currently deepest for equities, expanding to other asset classes
 - **News** — background RSS collection with archive search
 
@@ -50,18 +50,18 @@ Automation has two layers in OpenAlice. They're worth separating because each ev
 - **Cron scheduling** — cron expressions, intervals, or one-shot timestamps
 - **Webhooks** — inbound event triggers from external systems (planned)
 
-**Execution — *how* the trigger lands.** A fired schedule runs a **headless Workspace** — the same Workspace substrate, spawned non-interactively against the agent and prompt the job names. The agent does the work and reports back through the Inbox, and the run shows up live in the Runs tab. This is the whole execution model now: one substrate, the Workspace, whether a human opened it or a schedule did. (The earlier in-process AI loop that did this is gone.)
+**Execution — *how* the trigger lands.** A fired schedule runs a **headless Workspace** — the same Workspace substrate, spawned non-interactively against the agent and prompt the job names. The model works inside the workspace, can use MCP tools, and reports back through the Inbox.
 
 ### Interface
 
 - **Web UI** — workspace chat, the Inbox, a portfolio dashboard with equity curve, and full config management
-- **Workspace** — a per-task directory + git repo + persistent terminal session running your chosen agent CLI (`claude` / `codex` / `opencode` / `pi` / `shell`) with OpenAlice's MCP tools plumbed in. The recommended path for any non-trivial AI work — native prompt cache, native rendering, no protocol shim
-- **Inbox** — workspace-to-user push channel. Agents call `inbox_push` from inside a workspace to surface a document (rendered live) plus a markdown comment in a dedicated tab; click the reply bar to jump back into the workspace and continue
+- **Workspace** — a per-task directory + git repo + persistent terminal session running your chosen agent CLI (`claude` / `codex` / `opencode` / `pi` / `shell`) with OpenAlice's MCP tools plumbed in
+- **Inbox** — workspace-to-user push channel. Agents call `inbox_push` from inside a workspace to surface a document (rendered live) plus a markdown comment in a dedicated tab; click the reply button to jump back into the originating workspace
 - **MCP server** — tool exposure for external agents
 
 ### And More!
 
-- **Multi-provider AI** — the model runs in the native agent CLI; bring any provider via the credential vault (Anthropic, OpenAI, Google, GLM, MiniMax, Kimi, DeepSeek, …) or your CLI's own subscription login
+- **Multi-provider AI** — the model runs in the native agent CLI; bring any provider via the credential vault (Anthropic, OpenAI, Google, GLM, MiniMax, Kimi, DeepSeek, local/self-hosted OpenAI-compatible backends, …) or your CLI's own subscription login
 - **Evolution mode** — permission escalation that gives Alice full project access including Bash, enabling self-modification
 
 
@@ -198,29 +198,29 @@ with its own history and guards. UTAs live inside the **UTA service**
 credentials are isolated to that carrier and never visible to the
 agent runtime that drives trading decisions.
 
-**Trading-as-Git** — The workflow inside each UTA. Stage orders, commit with a message, then push to execute. Push runs guards, dispatches to the broker, snapshots account state, and records a commit with an 8-char hash. Full history is reviewable like `git log` / `git show`.
+**Trading-as-Git** — The workflow inside each UTA. Stage orders, commit with a message, then push to execute. Push runs guards, dispatches to the broker, snapshots account state, and records a full audit trail.
 
-**Guard** — A pre-execution safety check that runs inside a UTA before orders reach the broker. Guards enforce limits (max position size, cooldown between trades, symbol whitelist) and are configured per-account. Think of it as ESLint for trading — automated rules that catch problems before they go live.
+**Guard** — A pre-execution safety check that runs inside a UTA before orders reach the broker. Guards enforce limits (max position size, cooldown between trades, symbol whitelist) and are configured per account.
 
-**Scheduled run** — A cron job (cron expression / interval / one-shot) that, when it fires, spawns a **headless Workspace**: the job names an agent + a prompt, the agent runs non-interactively and reports back through the Inbox. Same Workspace substrate as interactive work — there's no separate autonomous-execution path.
+**Scheduled run** — A cron job (cron expression / interval / one-shot) that, when it fires, spawns a **headless Workspace**: the job names an agent + a prompt, the agent runs non-interactively in the same substrate as a human-opened workspace, and it can report back through the Inbox.
 
-**AI Provider** — Alice runs no model in-process; the model loop lives inside the native workspace CLI (Claude Code / Codex / opencode / Pi). What Alice keeps is a **credential vault**: api-key credentials, each declaring which wire shapes it can speak (Anthropic Messages / OpenAI Chat Completions / OpenAI Responses), injected into workspaces. Subscription logins (Claude Pro/Max, ChatGPT) live in the CLI's own login, not in Alice.
+**AI Provider** — Alice runs no model in-process; the model loop lives inside the native workspace CLI (Claude Code / Codex / opencode / Pi). What Alice keeps is a **credential vault**: api-key credentials + their protocol shapes, injected into workspaces so the selected CLI can talk to the chosen model endpoint.
 
-**Data Hub (TraderHub)** — The hosted low-frequency data source. Market boards (macro, movers, calendars, global macro, Fed, shipping, term structure, sector rotation) and keyed datasets (FRED / EIA / BLS series, FMP calendars, FX rates) resolve **hub → your own keys → loud error**, so a fresh install needs zero data-provider accounts. Every payload is stamped with its serving path (`hub` / `local`) and staleness — explicit, never silent. The hub is a convenience layer, not a correctness dependency: switch it off (Settings › Market Data) or point `baseUrl` at a self-hosted instance and behavior falls back to exactly the bring-your-own-keys model. K-lines and quotes deliberately stay off the hub — realtime data comes from your broker (via UTA) or vendor, where the incentives live. Hub responses are shape-checked data only, never configuration.
+**Data Hub (TraderHub)** — The hosted low-frequency data source. Market boards (macro, movers, calendars, global macro, Fed, shipping, term structure, sector rotation) and keyed datasets (FRED / ECB / BIS / IMF / SEC / World Bank / OECD / CFTC / ICE / NY Fed / BLS / EIA / BEA …) flow from TraderHub; direct providers can be configured as fallbacks.
 
-**Workspace** — A directory + git repo + persistent terminal session running a native agent CLI (`claude`, `codex`, `opencode`, `pi`, or `shell`) of your choice. OpenAlice plumbs its MCP servers into the workspace via `.mcp.json`, so the agent inside sees the workspace's local files plus OpenAlice's full tool surface (trading, market data, news, analysis). Workspaces live under `~/.openalice/workspaces/<wsId>/` — each is its own self-contained scratch directory the agent can read, write, and `git commit` inside. This is the recommended substrate for any non-trivial AI work: native prompt cache, native CLI rendering, no protocol shim between you and the model. Capability extensions (browser automation, third-party CLIs, custom scrapers) ship as new workspace **templates** rather than `src/` dependencies, keeping the main repo small.
+**Workspace** — A directory + git repo + persistent terminal session running a native agent CLI (`claude`, `codex`, `opencode`, `pi`, or `shell`) of your choice. OpenAlice plumbs its MCP servers, workspace tools, and credentials into that environment.
 
-**Templates & satellite repos** — A workspace template is a bootstrap script + initial file set that materializes a workspace of a particular shape (today: `chat`, `auto-quant`). Templates are how OpenAlice's ecosystem grows without bloating the main repo: when a new capability (a research toolkit, a backtest harness, a custom MCP server) is worth packaging, it lives in its own **satellite repo** that a template clones at bootstrap time. The main repo deliberately doesn't accept ecosystem PRs — it owns the Trading domain and the workspace launcher; everything else routes through satellite repos referenced by templates. Means template authors can ship on their own cadence, and OpenAlice's `src/` stays small.
+**Templates & satellite repos** — A workspace template is a bootstrap script + initial file set that materializes a workspace of a particular shape (today: `chat`, `auto-quant`). Templates are distributed as capability extensions, not as `src/` dependencies.
 
-**Inbox** — Workspace-to-user push channel. Agents working inside a workspace call the `inbox_push` MCP tool to surface docs (rendered live from workspace files) plus markdown commentary in a dedicated Inbox tab. The user reads, then clicks the reply bar at the bottom of the entry to jump back into the workspace's session and continue the conversation there. Scheduled runs deliver here too: a cron job spawns a headless Workspace whose agent calls `inbox_push` like any other — the Inbox is the single push surface.
+**Inbox** — Workspace-to-user push channel. Agents working inside a workspace call the `inbox_push` MCP tool to surface docs (rendered live from workspace files) plus markdown commentary in a dedicated tab.
 
 ## Workspace chat
 
-Chatting with Alice happens inside a **workspace**: a directory + git repo + a persistent terminal session running the native CLI of your chosen agent (`claude`, `codex`, `opencode`, `pi`, or `shell`). The CLI process handles all model interaction, prompt caching, and rendering — OpenAlice's job is to plumb its MCP server into the workspace and surface the terminal in the UI.
+Chatting with Alice happens inside a **workspace**: a directory + git repo + a persistent terminal session running the native CLI of your chosen agent (`claude`, `codex`, `opencode`, `pi`, or `shell`).
 
 - **Native prompt cache.** Claude Code, Codex, and the other agent CLIs implement vendor-specific cache control we can't replicate. On a long conversation this is often a 10× cost reduction.
 - **Native frontend.** TUI rendering, syntax highlighting, diff display — the CLI vendor has already tuned these for their model.
-- **Full tool surface.** The CLI sees the workspace's local files plus OpenAlice's MCP tools (trading, market data, news, analysis). No "greatest-common-denominator" trimming. Market data needs no API keys by default — the Data Hub serves it.
+- **Full tool surface.** The CLI sees the workspace's local files plus OpenAlice's MCP tools (trading, market data, news, analysis). No "greatest-common-denominator" trimming.
 - **No protocol shim.** Nothing sits between you and the model — whatever the CLI can do, you can do.
 
 The only requirement: the CLI binary has to be installed on the host running OpenAlice (the Docker image bundles `claude` and `codex`).
@@ -239,7 +239,7 @@ The only requirement: the CLI binary has to be installed on the host running Ope
 | **Node.js 22+** | Runs the backend | [nodejs.org](https://nodejs.org/) · `brew install node` · `nvm install 22` |
 | **pnpm 10+** | Workspace package manager | `npm install -g pnpm` · [pnpm.io/installation](https://pnpm.io/installation) |
 | **git** | Clone the repo | Usually already installed. If not: [git-scm.com](https://git-scm.com/) |
-| **Claude Code CLI** | The agent CLI that powers Workspace chats | [Install Claude Code](https://docs.anthropic.com/en/docs/claude-code), then run `claude` once to log in with your Claude Pro/Max subscription. **No API key needed.** |
+| **Claude Code CLI** | The default agent CLI that powers Workspace chats | [Install Claude Code](https://docs.anthropic.com/en/docs/claude-code), then run `claude` once to log in with your Claude Pro/Max or API account |
 
 Windows additionally needs a POSIX shell — see [Windows](#windows) below.
 
@@ -254,7 +254,7 @@ claude --version  # 2.x.x (Claude Code 2.x)
 ### 1. Clone and install dependencies
 
 ```bash
-git clone https://github.com/TraderAlice/OpenAlice.git
+git clone https://github.com/DocwatZ/OpenAlice.git
 cd OpenAlice
 pnpm install
 ```
@@ -327,12 +327,415 @@ Still stuck → see [Getting Help](#getting-help).
 
 OpenAlice's Workspace feature spawns bash-based bootstrap scripts to materialize new workspaces, so a POSIX shell environment is required:
 
-- **Recommended:** install [Git for Windows](https://gitforwindows.org/) and accept the default *"Use Git from the Windows Command Prompt"* option during setup — this puts `bash` plus the POSIX utilities the scripts depend on (`sed`, `cp`, `mkdir`, `basename`, `printf`, etc.) on your PATH.
+- **Recommended:** install [Git for Windows](https://gitforwindows.org/) and accept the default *"Use Git from the Windows Command Prompt"* option during setup — this puts `bash` plus the POSIX userland OpenAlice relies on (`sed`, `cp`, `mkdir`, `basename`, `printf`, `source`, `[[ ]]`, …) on PATH.
 - **Alternative:** run OpenAlice from inside [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) — the Linux env handles everything natively.
 
 Native `cmd.exe` / PowerShell alone are not supported (no `bash`, no POSIX utilities). If `bash` isn't on PATH when you create a workspace, the bootstrap fails with an inline hint pointing back here.
 
 Note: we don't currently dogfood OpenAlice on Windows, so the broader experience (PTY rendering, file watching, paths with spaces) may have rough edges. Bug reports very welcome.
+
+## Unraid Setup Guide
+
+If you want a simple always-on self-hosted deployment, Unraid is one of the easiest places to run OpenAlice.
+
+### What this setup gives you
+
+- OpenAlice running as a persistent Docker container on Unraid
+- Data stored under `/mnt/user/appdata/openalice`
+- Optional local/self-hosted AI via Ollama, LM Studio, vLLM, LiteLLM, or LocalAI
+- Access from your LAN, Tailscale, or reverse proxy
+- A clean path to keep broker secrets and AI config on your own hardware
+
+### Before you begin
+
+You should have:
+
+- An Unraid server with Docker enabled
+- A persistent appdata share, typically `/mnt/user/appdata`
+- Basic access to the Unraid terminal or SSH
+- At least one AI runtime plan:
+  - **Claude/Codex subscription login** inside the container, or
+  - **local/self-hosted model** via Ollama / LM Studio / vLLM / LiteLLM / LocalAI
+
+### Option A — easiest path: Docker Compose on Unraid
+
+1. Create an appdata folder:
+
+```bash
+mkdir -p /mnt/user/appdata/openalice
+```
+
+2. Save a compose file at:
+
+```text
+/mnt/user/appdata/openalice/docker-compose.yml
+```
+
+3. Use this compose file:
+
+```yaml
+services:
+  openalice:
+    image: openalice:local
+    build: /mnt/user/appdata/openalice/OpenAlice
+    container_name: openalice
+    restart: unless-stopped
+    ports:
+      - "47331:47331"
+    volumes:
+      - /mnt/user/appdata/openalice:/data
+    stdin_open: true
+    tty: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+4. Clone the repo onto the Unraid box:
+
+```bash
+cd /mnt/user/appdata/openalice
+git clone https://github.com/DocwatZ/OpenAlice.git
+```
+
+5. Start OpenAlice:
+
+```bash
+docker compose -f /mnt/user/appdata/openalice/docker-compose.yml up -d --build
+```
+
+6. Open the UI in your browser:
+
+```text
+http://<your-unraid-ip>:47331
+```
+
+7. Get the first-run admin token from logs:
+
+```bash
+docker logs openalice 2>&1 | grep -A1 'admin token'
+```
+
+8. Paste that token into the login screen.
+
+### Option B — Unraid Community Applications / Add Container
+
+If you prefer the Unraid GUI:
+
+- **Name:** `openalice`
+- **Repository:** `ghcr.io/traderalice/openalice:latest` if you want the upstream image, or build locally from the repo if you're using this fork's changes
+- **Port mapping:** `47331:47331`
+- **Path `/data`:** `/mnt/user/appdata/openalice`
+- **TTY:** enabled
+- **STDIN open:** enabled
+- **Timezone:** your timezone
+
+If you're using the GUI-only path with the upstream image, you can still add the local/self-hosted env vars documented below.
+
+### First login and agent authentication
+
+OpenAlice can run with subscription-backed CLIs or local/self-hosted model credentials.
+
+#### If you want Claude Code workspaces
+
+Authenticate once inside the container:
+
+```bash
+docker exec -it openalice claude
+```
+
+Follow the OAuth URL in your browser and paste the code back into the terminal.
+
+#### If you want Codex workspaces
+
+```bash
+docker exec -it openalice codex login
+```
+
+#### If you want fully local/self-hosted workspaces
+
+You do **not** need Claude or Codex login for `opencode` or `pi` workspaces when using a local/self-hosted OpenAI-compatible endpoint.
+
+## Local LLM / Self-hosted support added in this fork
+
+This fork adds a much smoother path for running OpenAlice against local or self-hosted models.
+
+### What changed
+
+Instead of requiring all AI access to come from Claude Code or Codex login flows, this fork can now bootstrap a reusable OpenAI-compatible credential directly from environment variables at container startup.
+
+That means you can point OpenAlice at:
+
+- **Ollama**
+- **LM Studio**
+- **vLLM**
+- **LiteLLM Proxy**
+- **LocalAI**
+- **OpenRouter**
+- Any other **OpenAI-compatible** endpoint via `OPENAI_BASE_URL`
+
+### How it works
+
+On startup, OpenAlice checks environment variables like:
+
+- `LLM_PROVIDER`
+- `OLLAMA_BASE_URL`
+- `LMSTUDIO_BASE_URL`
+- `VLLM_BASE_URL`
+- `LITELLM_BASE_URL`
+- `LOCALAI_BASE_URL`
+- `OPENAI_BASE_URL`
+- `OPENAI_API_KEY`
+- `MODEL_NAME`
+- `FALLBACK_MODEL`
+
+If one of those provider configs is present, it auto-seeds a credential in the AI Provider vault with the slug:
+
+```text
+env-local-llm
+```
+
+That credential is refreshed on every boot, so changing the container environment and restarting OpenAlice updates the credential automatically.
+
+### Why this matters
+
+This removes a lot of friction for self-hosters:
+
+- no manual credential creation for the common local-LLM case
+- no copying API endpoints into every workspace
+- easy Docker/Unraid deployment through env vars alone
+- works cleanly with service names in Docker Compose or `host.docker.internal`
+- lets OpenAlice stay self-hosted end-to-end for users who do not want cloud inference
+
+### Important runtime limitation
+
+Local/self-hosted providers are wired as **OpenAI Chat Completions** (`openai-chat`).
+
+That means:
+
+- **Supported workspace agents:** `opencode`, `pi`
+- **Not supported for this path:** `claude`, `codex`
+
+Why:
+
+- `claude` expects Anthropic-style flows
+- `codex` expects OpenAI Responses API flows
+- Local endpoints like Ollama / LM Studio / vLLM / LocalAI are typically exposed as **OpenAI-compatible chat** endpoints
+
+So when using local/self-hosted AI, create workspaces with **opencode** or **pi**.
+
+### Built-in local/self-hosted provider presets
+
+This fork also includes first-class provider presets in the AI Provider catalog for:
+
+- Ollama
+- LM Studio
+- vLLM
+- LiteLLM Proxy
+- LocalAI
+- OpenRouter
+- Custom OpenAI-compatible endpoints
+
+These presets provide sensible defaults, example base URLs, and model hints for both Docker-hosted and bare-metal setups.
+
+### Docker networking behavior
+
+For local/self-hosted providers, this fork is designed to work in the common deployment topologies:
+
+- **Service in same Compose stack:** use the Docker service name, e.g. `http://ollama:11434`
+- **Service on the Unraid host:** use `http://host.docker.internal:<port>`
+- **Arbitrary OpenAI-compatible proxy:** use `OPENAI_BASE_URL`
+
+Several providers auto-normalize the URL and append `/v1` where needed.
+
+## Unraid local model recipes
+
+### Recipe 1 — Ollama running directly on the Unraid host
+
+Add these environment variables to the `openalice` container:
+
+```yaml
+environment:
+  LLM_PROVIDER: "ollama"
+  OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+  MODEL_NAME: "llama3.2"
+```
+
+Then restart the container.
+
+After boot:
+
+- go to **Settings → AI Providers**
+- confirm `env-local-llm` exists
+- create a workspace
+- choose **opencode** or **pi** as the agent
+- select the `env-local-llm` credential
+
+### Recipe 2 — Ollama in the same compose stack
+
+```yaml
+services:
+  openalice:
+    image: openalice:local
+    build: /mnt/user/appdata/openalice/OpenAlice
+    container_name: openalice
+    restart: unless-stopped
+    ports:
+      - "47331:47331"
+    volumes:
+      - /mnt/user/appdata/openalice:/data
+    stdin_open: true
+    tty: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      LLM_PROVIDER: "ollama"
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      MODEL_NAME: "llama3.2"
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - /mnt/user/appdata/ollama:/root/.ollama
+```
+
+Bring it up:
+
+```bash
+docker compose -f /mnt/user/appdata/openalice/docker-compose.yml up -d --build
+```
+
+Pull a model:
+
+```bash
+docker exec -it ollama ollama pull llama3.2
+```
+
+### Recipe 3 — LM Studio on another machine on your LAN
+
+If LM Studio is running on your desktop and exposes its server on port 1234:
+
+```yaml
+environment:
+  LLM_PROVIDER: "lmstudio"
+  LMSTUDIO_BASE_URL: "http://192.168.1.50:1234"
+  MODEL_NAME: "local-model"
+```
+
+Make sure the Unraid container can reach that IP.
+
+### Recipe 4 — vLLM in Docker
+
+```yaml
+environment:
+  LLM_PROVIDER: "vllm"
+  VLLM_BASE_URL: "http://vllm:8000"
+  MODEL_NAME: "meta-llama/Meta-Llama-3-8B-Instruct"
+```
+
+### Recipe 5 — generic OpenAI-compatible endpoint
+
+If you're running another proxy or gateway:
+
+```yaml
+environment:
+  OPENAI_BASE_URL: "http://my-gateway:8080/v1"
+  OPENAI_API_KEY: "optional-or-required-key"
+  MODEL_NAME: "my-model"
+```
+
+This is the most flexible path if your backend is not one of the named providers.
+
+## Recommended Unraid storage layout
+
+Use persistent storage like this:
+
+```text
+/mnt/user/appdata/openalice/
+├── data/
+│   ├── config/
+│   ├── sessions/
+│   ├── trading/
+│   └── control/
+├── home/
+│   ├── .claude/
+│   └── .codex/
+└── workspaces/
+```
+
+Important:
+
+- back up `/mnt/user/appdata/openalice/data/config/`
+- this contains AI credentials, broker settings, and runtime config
+- if you use Claude/Codex login, preserve the `home/` subtree too
+
+## Recommended network exposure for Unraid
+
+Best to worst:
+
+1. **Tailscale / private VPN**
+2. **LAN only**
+3. **Reverse proxy with HTTPS and additional auth**
+4. **Direct public exposure** only if you truly understand the risk
+
+If you reverse proxy OpenAlice, also set:
+
+```bash
+OPENALICE_TRUSTED_PROXIES=127.0.0.1
+```
+
+Adjust the IP to match the proxy as seen by the container.
+
+## Unraid troubleshooting
+
+### `env-local-llm` does not appear
+
+Check:
+
+- the container actually has the env vars set
+- you restarted the container after editing them
+- container logs contain `[env-bootstrap]`
+
+Useful command:
+
+```bash
+docker logs openalice --tail 200
+```
+
+### Local model works from host but not from container
+
+Usually this is networking.
+
+Try:
+
+- `http://host.docker.internal:<port>` for services on the Unraid host
+- service name like `http://ollama:11434` for same-stack containers
+- direct LAN IP for services on another machine
+
+### Workspace opens but model calls fail
+
+Most common cause: wrong agent selection.
+
+For local/self-hosted AI, use:
+
+- `opencode`, or
+- `pi`
+
+Do not use `claude` or `codex` for Ollama/LM Studio/vLLM-style chat endpoints.
+
+### Container starts but UI is unreachable
+
+Check:
+
+```bash
+docker logs openalice --tail 100
+docker ps
+```
+
+Also confirm port `47331` is not already used by another app.
 
 ## Authentication
 
@@ -373,7 +776,7 @@ For self-hosting on a VPS or always-on box. The image bundles `claude` and
 `codex` CLIs — no host install needed.
 
 ```bash
-git clone https://github.com/TraderAlice/OpenAlice.git
+git clone https://github.com/DocwatZ/OpenAlice.git
 cd OpenAlice
 docker compose up -d --build
 ```
@@ -469,7 +872,34 @@ mutating API calls.
 
 All config lives in `~/.openalice/data/config/` as JSON files with Zod validation — one global store shared by dev checkouts and the desktop app (the `OPENALICE_HOME` env var overrides the root; Docker uses the mounted volume). Missing files fall back to sensible defaults. You can edit these files directly or use the Web UI — except `accounts.json`, which is sealed (encrypted at rest) and managed through the UI.
 
-**AI Provider** — The model runs inside the workspace CLI using its own login — e.g. your local Claude Code or Codex login, no API key needed. For api-key providers (Anthropic, OpenAI, Google, GLM, MiniMax, Kimi, DeepSeek, …), add credentials in the Web UI's **AI Provider** vault; each credential declares the wire shapes it speaks and gets injected into workspaces, picking the shape the target agent uses. Subscription logins stay in the CLI.
+**AI Provider** — The model runs inside the workspace CLI using its own login — e.g. your local Claude Code or Codex login, no API key needed. For api-key providers (Anthropic, OpenAI, Google, GLM, MiniMax, Kimi, DeepSeek, local/self-hosted OpenAI-compatible backends, …), add credentials in the Web UI's **AI Provider** vault; each credential declares the wire shapes it speaks and gets injected into workspaces, picking the shape the target agent uses. Subscription logins stay in the CLI.
+
+### Local/self-hosted AI credential bootstrap
+
+For Docker and Unraid users, this fork can auto-create a vault credential from environment variables.
+
+Supported auto-bootstrap inputs:
+
+- `LLM_PROVIDER=ollama|lmstudio|vllm|litellm|localai|openrouter`
+- `OLLAMA_BASE_URL`
+- `LMSTUDIO_BASE_URL`
+- `VLLM_BASE_URL`
+- `LITELLM_BASE_URL`
+- `LOCALAI_BASE_URL`
+- `OPENAI_BASE_URL`
+- `OPENAI_API_KEY`
+- `MODEL_NAME`
+- `FALLBACK_MODEL`
+
+Behavior:
+
+- On startup, OpenAlice resolves the endpoint and writes a credential named `env-local-llm`
+- The credential uses the `openai-chat` wire shape
+- If the env vars change, restart the container and the credential is refreshed
+- If no relevant env vars are set, nothing is created
+- For providers that do not require a key, the vault stores a placeholder value so the schema remains valid
+
+This is the recommended setup path for Ollama, LM Studio, vLLM, LiteLLM, LocalAI, OpenRouter, and custom OpenAI-compatible gateways in self-hosted deployments.
 
 **Trading** — Unified Trading Account (UTA) architecture. Each account in `accounts.json` becomes a UTA with its own broker connection, git history, and guard config. Broker-specific settings live in the `brokerConfig` field — each broker type declares its own schema and validates it internally.
 
@@ -478,7 +908,7 @@ All config lives in `~/.openalice/data/config/` as JSON files with Zod validatio
 | `engine.json` | Trading pairs, tick interval, timeframe |
 | `agent.json` | Max agent steps, evolution mode toggle, Claude Code tool permissions |
 | `ai-provider.json` | Central credential vault — api-key credentials + their wire capabilities, injected into workspaces |
-| `accounts.json` | Trading accounts with `type`, `enabled`, `guards`, and `brokerConfig` (broker-specific settings) |
+| `accounts.json` | Trading accounts with `type`, `enabled`, `guards`, and `brokerConfig` |
 | `connectors.json` | Web/MCP server ports |
 | `web-subchannels.json` | Web UI chat sub-channel definitions (per-channel system prompt + disabled-tools overrides) |
 | `tools.json` | Tool enable/disable configuration |
@@ -506,7 +936,7 @@ Stuck? Here's the recommended path, roughly in order:
 
 1. **Let an AI agent fix it** — Claude Code, Cursor, or any other coding agent can read the codebase and patch most issues directly. Fastest path for bugs and "how do I do X" questions
 2. **[Ask DeepWiki](https://deepwiki.com/TraderAlice/OpenAlice)** — natural-language Q&A over the entire codebase, good for architectural questions and figuring out where to look
-3. **Community** — [Discord](https://discord.gg/zf4STmrQd8) for English speakers, [QQ 群](https://qm.qq.com/q/iSg6O4FmrC) for 中文开发者. For things AI can't answer — design discussions, edge cases, or just hanging out
+3. **Community** — [Discord](https://discord.gg/zf4STmrQd8) for English speakers, [QQ 群](https://qm.qq.com/q/iSg6O4FmrC) for 中文开发者. For things AI can't answer — design discussions, roadmap, bug reports, trading integrations
 
 ## Star History
 
