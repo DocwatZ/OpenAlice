@@ -51,6 +51,8 @@ fi
 # ── Volume ownership ──────────────────────────────────────────────────────────
 # Ensure the data volume and log directory are writable by the target user.
 # Only chown the top-level dirs — avoid traversing large subtrees on every boot.
+# Note: `stat -c '%u'` is GNU coreutils syntax (Debian/Ubuntu/Unraid).
+# Alpine uses `stat -f '%u'`; this image is Debian-based so GNU stat is correct.
 for dir in /data /app/logs; do
   if [ -d "${dir}" ]; then
     # Only fix if the owner doesn't already match (perf: skip on subsequent boots).

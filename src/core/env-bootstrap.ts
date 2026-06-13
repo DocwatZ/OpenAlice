@@ -112,9 +112,9 @@ export async function bootstrapFromEnv(): Promise<void> {
   const credential: Credential = {
     vendor: 'custom',
     authType: 'api-key',
-    // Ollama / LocalAI don't need a key; use a placeholder so the schema stays
-    // valid, but keep it absent when a real key is provided.
-    ...(apiKey ? { apiKey } : { apiKey: 'none' }),
+    // Use the provided key; fall back to 'none' for providers that don't
+    // require a key (Ollama, LocalAI, LM Studio) so the schema stays valid.
+    apiKey: apiKey || 'none',
     wires: { 'openai-chat': endpoint },
   }
 

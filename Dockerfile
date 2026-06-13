@@ -141,8 +141,10 @@ ENV OPENALICE_APP_HOME=/app \
 VOLUME ["/data"]
 EXPOSE 47331
 
-# Healthcheck: poll the version endpoint every 30s. Allows up to 90s for
-# cold start (agent CLI installs, UTA warm-up). Container moves to
+# Healthcheck: poll the version endpoint every 30s. This endpoint is served
+# by Alice's WebPlugin and returns a 200 only after the full startup sequence
+# completes (migrations, UTA handshake, all plugins started). Allows up to 90s
+# for cold start (agent CLI installs, UTA warm-up). Container moves to
 # "unhealthy" after 3 consecutive failures.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD wget -qO- http://localhost:${OPENALICE_WEB_PORT:-47331}/api/version > /dev/null || exit 1
