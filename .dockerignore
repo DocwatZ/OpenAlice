@@ -33,4 +33,6 @@ coverage
 # Docker artifacts themselves (don't ship the recipe into the recipe)
 Dockerfile
 docker-compose.yml
+docker-compose.unraid.yml
 .dockerignore
+# Note: docker/ dir is NOT excluded — docker/entrypoint.sh is COPYd into the image

@@ -303,6 +303,146 @@ export const DEEPSEEK: PresetDef = {
   writeOnlyFields: ['apiKey'],
 }
 
+// ==================== Local / Self-hosted LLMs ====================
+//
+// All local providers speak the OpenAI Chat Completions wire shape
+// (`openai-chat`). Inject into workspaces running opencode or pi agents
+// (claude and codex require anthropic / openai-responses respectively).
+//
+// Docker networking note: when Alice runs in a container, use
+// `host.docker.internal` to reach services on the host; use the service
+// name when they're in the same compose network.
+
+export const OLLAMA: PresetDef = {
+  id: 'ollama',
+  label: 'Ollama',
+  description: 'Local models served by Ollama (OpenAI-compatible API)',
+  category: 'third-party',
+  defaultName: 'Ollama',
+  hint: 'Ollama exposes an OpenAI-compatible endpoint at /v1. Works with opencode and pi workspace agents. In Docker use http://host.docker.internal:11434/v1; on bare-metal use http://localhost:11434/v1. No API key required — leave the field blank.',
+  zodSchema: z.object({
+    model: z.string().default('llama3.2').describe('Model (e.g. llama3.2, qwen2.5:7b, mistral)'),
+    baseUrl: z.string().default('http://host.docker.internal:11434/v1').describe('Ollama base URL'),
+    apiKey: z.string().optional().describe('API key (leave blank — Ollama does not require one)'),
+  }),
+  regions: [
+    { id: 'docker', label: 'Docker host (host.docker.internal)', wires: { 'openai-chat': 'http://host.docker.internal:11434/v1' } },
+    { id: 'localhost', label: 'Localhost (bare-metal)', wires: { 'openai-chat': 'http://localhost:11434/v1' } },
+  ],
+  models: [
+    { id: 'llama3.2', label: 'Llama 3.2 (3B)' },
+    { id: 'llama3.1:8b', label: 'Llama 3.1 (8B)' },
+    { id: 'qwen2.5:7b', label: 'Qwen 2.5 (7B)' },
+    { id: 'qwen3:8b', label: 'Qwen 3 (8B)' },
+    { id: 'mistral', label: 'Mistral (7B)' },
+    { id: 'deepseek-r1:8b', label: 'DeepSeek R1 (8B)' },
+    { id: 'gemma3:9b', label: 'Gemma 3 (9B)' },
+    { id: 'phi4', label: 'Phi-4 (14B)' },
+  ],
+  writeOnlyFields: [],
+}
+
+export const LM_STUDIO: PresetDef = {
+  id: 'lmstudio',
+  label: 'LM Studio',
+  description: 'Local models served by LM Studio (OpenAI-compatible API)',
+  category: 'third-party',
+  defaultName: 'LM Studio',
+  hint: 'LM Studio exposes an OpenAI Chat Completions endpoint. Start the local server in LM Studio (port 1234 by default). Works with opencode and pi workspace agents. No API key required.',
+  zodSchema: z.object({
+    model: z.string().default('local-model').describe('Model identifier shown in LM Studio'),
+    baseUrl: z.string().default('http://host.docker.internal:1234/v1').describe('LM Studio base URL'),
+    apiKey: z.string().optional().describe('API key (leave blank — LM Studio does not require one)'),
+  }),
+  regions: [
+    { id: 'docker', label: 'Docker host (host.docker.internal)', wires: { 'openai-chat': 'http://host.docker.internal:1234/v1' } },
+    { id: 'localhost', label: 'Localhost (bare-metal)', wires: { 'openai-chat': 'http://localhost:1234/v1' } },
+  ],
+  writeOnlyFields: [],
+}
+
+export const VLLM: PresetDef = {
+  id: 'vllm',
+  label: 'vLLM',
+  description: 'High-throughput LLM inference via vLLM server (OpenAI-compatible)',
+  category: 'third-party',
+  defaultName: 'vLLM',
+  hint: 'vLLM serves an OpenAI-compatible API at /v1. Works with opencode and pi agents. Typical deployment: docker run vllm/vllm-openai --port 8000. Set the model to the HuggingFace path you launched vLLM with.',
+  zodSchema: z.object({
+    model: z.string().default('meta-llama/Meta-Llama-3-8B-Instruct').describe('Model (HuggingFace path used at vLLM launch)'),
+    baseUrl: z.string().default('http://vllm:8000/v1').describe('vLLM base URL'),
+    apiKey: z.string().optional().describe('API key (leave blank or use any string)'),
+  }),
+  regions: [
+    { id: 'compose', label: 'Docker Compose (service: vllm)', wires: { 'openai-chat': 'http://vllm:8000/v1' } },
+    { id: 'docker', label: 'Docker host', wires: { 'openai-chat': 'http://host.docker.internal:8000/v1' } },
+  ],
+  writeOnlyFields: [],
+}
+
+export const LITELLM: PresetDef = {
+  id: 'litellm',
+  label: 'LiteLLM Proxy',
+  description: 'LiteLLM proxy gateway — unified API over 100+ providers',
+  category: 'third-party',
+  defaultName: 'LiteLLM',
+  hint: 'LiteLLM Proxy presents an OpenAI-compatible interface. Works with opencode and pi agents. The model name maps to a LiteLLM route (e.g. ollama/llama3, anthropic/claude-3-5-sonnet). Optionally set a master key.',
+  zodSchema: z.object({
+    model: z.string().default('ollama/llama3.2').describe('Model (LiteLLM route, e.g. ollama/llama3.2)'),
+    baseUrl: z.string().default('http://litellm:4000').describe('LiteLLM Proxy base URL'),
+    apiKey: z.string().optional().describe('Master key (if set in LiteLLM config)'),
+  }),
+  regions: [
+    { id: 'compose', label: 'Docker Compose (service: litellm)', wires: { 'openai-chat': 'http://litellm:4000' } },
+    { id: 'docker', label: 'Docker host', wires: { 'openai-chat': 'http://host.docker.internal:4000' } },
+  ],
+  writeOnlyFields: [],
+}
+
+export const LOCALAI: PresetDef = {
+  id: 'localai',
+  label: 'LocalAI',
+  description: 'Self-hosted OpenAI-compatible inference via LocalAI',
+  category: 'third-party',
+  defaultName: 'LocalAI',
+  hint: 'LocalAI is a drop-in local OpenAI replacement. Works with opencode and pi agents. Configure models via LocalAI\'s YAML config; use the model filename without extension as the model ID.',
+  zodSchema: z.object({
+    model: z.string().default('gpt-4').describe('Model (filename/alias configured in LocalAI)'),
+    baseUrl: z.string().default('http://localai:8080/v1').describe('LocalAI base URL'),
+    apiKey: z.string().optional().describe('API key (leave blank — LocalAI does not require one by default)'),
+  }),
+  regions: [
+    { id: 'compose', label: 'Docker Compose (service: localai)', wires: { 'openai-chat': 'http://localai:8080/v1' } },
+    { id: 'docker', label: 'Docker host', wires: { 'openai-chat': 'http://host.docker.internal:8080/v1' } },
+  ],
+  writeOnlyFields: [],
+}
+
+export const OPENROUTER: PresetDef = {
+  id: 'openrouter',
+  label: 'OpenRouter',
+  description: 'OpenRouter — unified API gateway for cloud + local models',
+  category: 'third-party',
+  defaultName: 'OpenRouter',
+  hint: 'OpenRouter aggregates many providers under one OpenAI-compatible API. Use free models (e.g. meta-llama/llama-3-8b-instruct:free) to get started. Requires an API key from openrouter.ai.',
+  zodSchema: z.object({
+    model: z.string().default('meta-llama/llama-3.1-8b-instruct:free').describe('Model (OpenRouter model ID)'),
+    baseUrl: z.string().default('https://openrouter.ai/api/v1').describe('OpenRouter base URL'),
+    apiKey: z.string().min(1).describe('OpenRouter API key'),
+  }),
+  regions: [
+    { id: 'default', label: 'OpenRouter (openrouter.ai)', wires: { 'openai-chat': 'https://openrouter.ai/api/v1' } },
+  ],
+  models: [
+    { id: 'meta-llama/llama-3.1-8b-instruct:free', label: 'Llama 3.1 8B (free)' },
+    { id: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (free)' },
+    { id: 'google/gemma-3-27b-it:free', label: 'Gemma 3 27B (free)' },
+    { id: 'deepseek/deepseek-r1:free', label: 'DeepSeek R1 (free)' },
+    { id: 'qwen/qwen3-8b:free', label: 'Qwen3 8B (free)' },
+  ],
+  writeOnlyFields: ['apiKey'],
+}
+
 // ==================== Custom ====================
 
 export const CUSTOM: PresetDef = {
@@ -336,5 +476,11 @@ export const PRESET_CATALOG: PresetDef[] = [
   GLM,
   KIMI,
   DEEPSEEK,
+  OLLAMA,
+  LM_STUDIO,
+  VLLM,
+  LITELLM,
+  LOCALAI,
+  OPENROUTER,
   CUSTOM,
 ]

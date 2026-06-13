@@ -7,6 +7,10 @@
 # Target audience: VPS self-hosters running Workspace chat. Auth is the
 # user's responsibility — `docker exec -it openalice claude` once after
 # first up, then OpenAlice is good to go.
+#
+# Unraid / PUID/PGID:
+#   Set PUID and PGID env vars to match the host user owning the appdata
+#   directory. The entrypoint script re-maps ownership on startup.
 
 # ─── build stage ──────────────────────────────────────────
 FROM node:22-trixie AS build
@@ -61,10 +65,16 @@ WORKDIR /app
 # Guardian supervisor cleanly instead of getting dropped by Node's
 # default PID-1 behaviour, and zombies from short-lived children
 # (workspace CLI auth flows, etc.) get reaped.
+# `tzdata` provides timezone data for the TZ env var.
+# `gosu` is used by the entrypoint script for clean PUID/PGID privilege drop.
+# `wget` is used by the Docker healthcheck.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         git \
+        gosu \
         tini \
+        tzdata \
+        wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Two agent CLIs installed globally so they're on PATH for the PTY
@@ -106,6 +116,9 @@ COPY --from=build /src/services/uta/node_modules  ./services/uta/node_modules
 # needed at runtime, but copying the directory keeps the file path the
 # CMD references stable.
 COPY --from=build /src/scripts                    ./scripts
+# Entrypoint script — handles PUID/PGID privilege drop for Unraid / NAS.
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Two-home model — see src/core/paths.ts.
 #   /app  = APP_RESOURCES_HOME  (image content, baked in)
@@ -120,12 +133,25 @@ ENV OPENALICE_APP_HOME=/app \
     OPENALICE_WEB_PORT=47331 \
     OPENALICE_MCP_PORT=47332 \
     OPENALICE_UTA_PORT=47333 \
-    OPENALICE_BIND_HOST=0.0.0.0
+    OPENALICE_BIND_HOST=0.0.0.0 \
+    TZ=UTC \
+    PUID=0 \
+    PGID=0
 
 VOLUME ["/data"]
 EXPOSE 47331
 
-# tini handles signal forwarding + zombie reaping; Guardian then spawns
-# UTA → Alice and supervises the lifecycle (see scripts/guardian/prod.mjs).
-ENTRYPOINT ["/usr/bin/tini", "--"]
+# Healthcheck: poll the version endpoint every 30s. This endpoint is served
+# by Alice's WebPlugin and returns a 200 only after the full startup sequence
+# completes (migrations, UTA handshake, all plugins started). Allows up to 90s
+# for cold start (agent CLI installs, UTA warm-up). Container moves to
+# "unhealthy" after 3 consecutive failures.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD wget -qO- http://localhost:${OPENALICE_WEB_PORT:-47331}/api/version > /dev/null || exit 1
+
+# entrypoint.sh handles PUID/PGID re-mapping, then drops privileges and
+# exec's tini. tini handles signal forwarding + zombie reaping; Guardian
+# then spawns UTA → Alice (see scripts/guardian/prod.mjs).
+ENTRYPOINT ["/entrypoint.sh", "/usr/bin/tini", "--"]
 CMD ["node", "scripts/guardian/prod.mjs"]
+

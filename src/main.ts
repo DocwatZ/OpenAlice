@@ -4,6 +4,7 @@ import { dirname } from 'path'
 // as of 0.40 — the model loop runs inside the native workspace CLIs; autonomous
 // runs go through headless workspace dispatch (cron → workspace).
 import { loadConfig } from './core/config.js'
+import { bootstrapFromEnv } from './core/env-bootstrap.js'
 import { printLegacyDataNotice } from './core/legacy-data-notice.js'
 import { dataPath, defaultPath } from '@/core/paths.js'
 import type { Plugin, EngineContext } from './core/types.js'
@@ -74,6 +75,10 @@ async function main() {
   printLegacyDataNotice('[alice]')
 
   const config = await loadConfig()
+
+  // Seed the credential vault from env vars (Docker / Unraid deployments).
+  // No-op when no relevant env vars are set — existing cloud workflows unaffected.
+  await bootstrapFromEnv()
 
   // ==================== Event Log ====================
 
