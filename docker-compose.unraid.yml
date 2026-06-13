@@ -1,0 +1,148 @@
+# OpenAlice — Unraid / self-hosted compose file.
+#
+# Designed for Unraid's Docker management UI and standard appdata layout.
+# Copy this file to your Unraid server and run:
+#
+#   docker compose -f docker-compose.unraid.yml up -d
+#
+# Or add it as a custom app template in Unraid's Community Applications.
+#
+# Storage layout (all under /mnt/user/appdata/openalice/):
+#   config/   — AI credentials, broker config, settings
+#   data/     — workspaces, trading state, sessions
+#   logs/     — engine.log, access.log
+#
+# Authentication (first run only):
+#   docker exec -it openalice claude       # Anthropic OAuth
+#   docker exec -it openalice codex login  # OpenAI OAuth (if using Codex)
+#
+# Local LLM quick-start (Ollama on same Unraid host):
+#   1. Install Ollama via Community Applications
+#   2. Uncomment the LOCAL LLM section below
+#   3. docker compose -f docker-compose.unraid.yml up -d
+
+services:
+  openalice:
+    image: ghcr.io/traderalice/openalice:latest
+    # Alternatively build from source:
+    # build: .
+    container_name: openalice
+    restart: unless-stopped
+
+    # ── Ports ────────────────────────────────────────────────────────────────
+    ports:
+      # Web UI — change the left side to your preferred host port.
+      - "${WEB_PORT:-47331}:47331"
+      # MCP server is intentionally NOT exposed — only consumed by CLIs
+      # inside this container. Expose only if you have an external MCP client.
+      # - "47332:47332"
+
+    # ── Volumes ──────────────────────────────────────────────────────────────
+    volumes:
+      # All persistent state lives here. Maps to Unraid's standard appdata.
+      - /mnt/user/appdata/openalice:/data
+      # Optional: reuse host claude / codex auth tokens (read-only).
+      # - /root/.claude:/data/home/.claude:ro
+      # - /root/.codex:/data/home/.codex:ro
+
+    # ── Environment ──────────────────────────────────────────────────────────
+    environment:
+      # ── Unraid identity ────────────────────────────────────────────────────
+      # Match the UID/GID of the user that owns /mnt/user/appdata/openalice.
+      # Run `id` on your Unraid terminal to find your values. Default = root.
+      PUID: "${PUID:-99}"
+      PGID: "${PGID:-100}"
+      TZ: "${TZ:-America/New_York}"
+
+      # ── Ports (optional override) ──────────────────────────────────────────
+      OPENALICE_WEB_PORT: "47331"
+      OPENALICE_MCP_PORT: "47332"
+      OPENALICE_UTA_PORT: "47333"
+
+      # ── Local LLM — Ollama ─────────────────────────────────────────────────
+      # Uncomment to auto-configure Ollama on the Unraid host.
+      # The credential appears in Settings › AI Providers as 'env-local-llm'.
+      # LLM_PROVIDER: "ollama"
+      # OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      # MODEL_NAME: "llama3.2"
+      # FALLBACK_MODEL: "deepseek-r1:8b"
+
+      # ── Local LLM — LM Studio ──────────────────────────────────────────────
+      # LLM_PROVIDER: "lmstudio"
+      # LMSTUDIO_BASE_URL: "http://host.docker.internal:1234"
+      # MODEL_NAME: "local-model"
+
+      # ── Local LLM — vLLM (same compose network) ────────────────────────────
+      # LLM_PROVIDER: "vllm"
+      # VLLM_BASE_URL: "http://vllm:8000"
+      # MODEL_NAME: "meta-llama/Meta-Llama-3-8B-Instruct"
+
+      # ── Local LLM — LiteLLM Proxy ──────────────────────────────────────────
+      # LLM_PROVIDER: "litellm"
+      # LITELLM_BASE_URL: "http://litellm:4000"
+      # OPENAI_API_KEY: "your-litellm-master-key"
+      # MODEL_NAME: "ollama/llama3.2"
+
+      # ── Local LLM — OpenAI-compatible endpoint ─────────────────────────────
+      # Works for any provider that speaks OpenAI Chat Completions.
+      # OPENAI_BASE_URL: "http://host.docker.internal:8080/v1"
+      # OPENAI_API_KEY: ""
+
+      # ── Remote API keys (alternative to UI setup) ──────────────────────────
+      # These are used for test-connection in the UI; the credential vault is
+      # the primary store. It is safer to enter keys through the UI.
+      # OPENAI_API_KEY: "sk-..."
+
+    # Keep stdin/tty open so `docker exec -it openalice claude` can run
+    # the interactive OAuth flow.
+    stdin_open: true
+    tty: true
+
+    # ── Networking ───────────────────────────────────────────────────────────
+    # extra_hosts allows reaching the Unraid host (e.g. Ollama) even when
+    # OpenAlice is in a non-host network. It is a no-op on Linux host networking.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # ── Healthcheck ──────────────────────────────────────────────────────────
+    # The image already defines a HEALTHCHECK. Override here if needed.
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO-", "http://localhost:47331/api/version"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   start_period: 90s
+    #   retries: 3
+
+  # ── Optional: Ollama (comment out if Ollama runs outside Docker) ──────────
+  # Uncomment this block to run Ollama in the same compose project.
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /mnt/user/appdata/ollama:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+  #   # GPU passthrough — Unraid requires the Nvidia plugin or AMD GPU plugin.
+  #   # For Nvidia (install Unraid Nvidia Driver plugin first):
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: 1
+  #   #           capabilities: [gpu]
+  #   # environment:
+  #   #   - NVIDIA_VISIBLE_DEVICES=all
+
+  # ── Optional: LiteLLM Proxy ───────────────────────────────────────────────
+  # Routes multiple providers through one endpoint.
+  # litellm:
+  #   image: ghcr.io/berriai/litellm:main-latest
+  #   container_name: litellm
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /mnt/user/appdata/litellm/config.yaml:/app/config.yaml:ro
+  #   command: ["--config", "/app/config.yaml", "--port", "4000"]
+  #   ports:
+  #     - "4000:4000"
