@@ -108,6 +108,20 @@ export class WorkspaceRegistry {
     return ws;
   }
 
+  /**
+   * Replace the agents list for an existing workspace. Returns false if the
+   * workspace is not found. Used when a per-workspace agent config is saved —
+   * the saved agent is added to the list so it appears in the spawn menu even
+   * if it wasn't part of the template's defaultAgents.
+   */
+  async updateAgents(id: string, agents: readonly string[]): Promise<boolean> {
+    const ws = this.byId.get(id);
+    if (!ws) return false;
+    this.byId.set(id, { ...ws, agents });
+    await this.flush();
+    return true;
+  }
+
   private async flush(): Promise<void> {
     const payload: FileShape = {
       version: 1,

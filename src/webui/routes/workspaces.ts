@@ -904,6 +904,19 @@ export function createWorkspaceRoutes(svc: WorkspaceService): Hono {
       const adapter = svc.adapters.get(agent);
       if (!adapter?.writeAiConfig) return c.json({ error: 'unknown_agent' }, 400);
       await adapter.writeAiConfig(meta.dir, cfg);
+      // When a non-empty config is saved for an agent not yet in this
+      // workspace's agents list, add it so it appears in the spawn menu.
+      // "Non-empty" = at least one of baseUrl/apiKey/model is set — the
+      // "Reset to global default" path sends all nulls and should not add
+      // the agent.
+      const hasContent =
+        (typeof cfg.baseUrl === 'string' && cfg.baseUrl.length > 0) ||
+        (typeof cfg.apiKey === 'string' && cfg.apiKey.length > 0) ||
+        (typeof cfg.model === 'string' && cfg.model.length > 0);
+      if (hasContent && !meta.agents.includes(agent)) {
+        await svc.registry.updateAgents(id, [...meta.agents, agent]);
+        launcherLogger.info('agent_config.agent_enabled', { id, agent });
+      }
       launcherLogger.info('agent_config.saved', { id, agent });
       return c.json({ ok: true });
     } catch (err) {
