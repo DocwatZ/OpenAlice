@@ -27,6 +27,7 @@ import {
 
 import '../components/workspace/workspaces.css'
 
+import { useToast } from '../components/Toast'
 import { WorkspaceAIConfigModal } from '../components/workspace/WorkspaceAIConfigModal'
 import {
   deleteSession as apiDeleteSession,
@@ -84,6 +85,7 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
 
   const openOrFocus = useWorkspace((s) => s.openOrFocus)
   const closeTab = useWorkspace((s) => s.closeTab)
+  const toast = useToast()
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -160,9 +162,10 @@ export function WorkspacesProvider({ children }: { children: ReactNode }) {
         void refresh()
       } catch (err) {
         console.error('workspaces.spawn_failed', { wsId, opts, err })
+        toast.error(`Failed to start session: ${(err as Error).message}`)
       }
     },
-    [refresh, openOrFocus],
+    [refresh, openOrFocus, toast],
   )
 
   const pauseSession = useCallback(
