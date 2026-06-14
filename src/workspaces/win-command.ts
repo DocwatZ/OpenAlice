@@ -25,7 +25,7 @@
  * On non-Windows this is the identity function: the kernel reads shebangs and a
  * bare-name PATH lookup finds shell-script shims fine.
  */
-import { existsSync } from 'node:fs';
+import { accessSync, constants, existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 
 export interface ResolvedCommand {
@@ -98,4 +98,43 @@ function rank(ext: string): number {
   if (e === '.exe' || e === '.com') return 0;
   if (e === '.cmd' || e === '.bat') return 1;
   return 2;
+}
+
+/**
+ * Cross-platform "is this binary installed and reachable?" check.
+ *
+ * Returns the resolved absolute path if the binary is found, or null if not.
+ * Used as a pre-flight guard before spawning a PTY: without this, a missing
+ * CLI binary causes node-pty to print the opaque "execvp(3) failed.: No such
+ * file or directory" to the terminal, respawn three times, then die — leaving
+ * the user with no idea what went wrong.
+ *
+ * **Absolute-path commands** (containing `/` or `\`) are returned as-is
+ * without any existence check — the function signals "found" and the OS will
+ * emit the standard ENOENT at exec time if the path is wrong. All agent CLI
+ * adapters use bare names (`opencode`, `claude`, …), so this path is not
+ * normally hit in practice.
+ */
+export function lookupBinaryInEnvPath(
+  name: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  // Already an absolute or explicit path — trust the caller.
+  if (name.includes('/') || name.includes('\\')) return name;
+  if (platform === 'win32') {
+    return lookupOnWindowsPath(name, env);
+  }
+  // POSIX: walk each PATH directory and check executable bit.
+  const dirs = (env['PATH'] ?? '').split(delimiter).filter(Boolean);
+  for (const dir of dirs) {
+    const candidate = join(dir, name);
+    try {
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // not present or not executable — try next dir
+    }
+  }
+  return null;
 }

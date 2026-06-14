@@ -42,6 +42,7 @@ import { SessionRegistry, type SessionRecord } from './session-registry.js';
 import { buildSpawnEnv } from './spawn-env.js';
 import { readReadmeVersion, TemplateRegistry } from './template-registry.js';
 import { TranscriptWatcher } from './transcript-watcher.js';
+import { lookupBinaryInEnvPath } from './win-command.js';
 import { WorkspaceCreator } from './workspace-creator.js';
 import { WorkspaceRegistry, type WorkspaceMeta } from './workspace-registry.js';
 
@@ -444,6 +445,21 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
           );
       }
       const { command: composedCommand, env, transcriptDir } = composeSpawnInputs(ws, adapter, resume);
+
+      // Pre-flight binary check: verify the CLI is installed before handing
+      // off to node-pty. Without this guard, a missing binary causes node-pty
+      // to print the opaque "execvp(3) failed.: No such file or directory" to
+      // the PTY, the session respawn-loops three times into the circuit
+      // breaker, and the user has no idea what went wrong. Absolute-path
+      // commands pass through the check unchanged (lookupBinaryInEnvPath
+      // returns non-null for them) and fall back to the native exec error.
+      const binaryName = composedCommand[0];
+      if (binaryName && lookupBinaryInEnvPath(binaryName, env) === null) {
+        throw new Error(
+          `'${binaryName}' is not installed or not found in PATH. ` +
+          `Install the '${adapter.id}' CLI and restart Alice to use this agent.`,
+        );
+      }
 
       // path.trace — single line capturing every path the spawn touches. The
       // raison d'être of the workspace-sessions.log file: any two fields that
