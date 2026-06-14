@@ -109,8 +109,11 @@ function rank(ext: string): number {
  * file or directory" to the terminal, respawn three times, then die — leaving
  * the user with no idea what went wrong.
  *
- * Absolute-path commands and explicit-extension names pass through unchanged
- * (they get the same lookup that the OS would do at exec time).
+ * **Absolute-path commands** (containing `/` or `\`) are returned as-is
+ * without any existence check — the function signals "found" and the OS will
+ * emit the standard ENOENT at exec time if the path is wrong. All agent CLI
+ * adapters use bare names (`opencode`, `claude`, …), so this path is not
+ * normally hit in practice.
  */
 export function lookupBinaryInEnvPath(
   name: string,

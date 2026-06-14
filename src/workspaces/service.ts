@@ -450,16 +450,15 @@ export async function createWorkspaceService(opts: CreateWorkspaceServiceOptions
       // off to node-pty. Without this guard, a missing binary causes node-pty
       // to print the opaque "execvp(3) failed.: No such file or directory" to
       // the PTY, the session respawn-loops three times into the circuit
-      // breaker, and the user has no idea what went wrong.
+      // breaker, and the user has no idea what went wrong. Absolute-path
+      // commands pass through the check unchanged (lookupBinaryInEnvPath
+      // returns non-null for them) and fall back to the native exec error.
       const binaryName = composedCommand[0];
-      if (binaryName && !binaryName.includes('/') && !binaryName.includes('\\')) {
-        const found = lookupBinaryInEnvPath(binaryName, env);
-        if (!found) {
-          throw new Error(
-            `'${binaryName}' is not installed or not found in PATH. ` +
-            `Install the '${adapter.id}' CLI and restart Alice to use this agent.`,
-          );
-        }
+      if (binaryName && lookupBinaryInEnvPath(binaryName, env) === null) {
+        throw new Error(
+          `'${binaryName}' is not installed or not found in PATH. ` +
+          `Install the '${adapter.id}' CLI and restart Alice to use this agent.`,
+        );
       }
 
       // path.trace — single line capturing every path the spawn touches. The
